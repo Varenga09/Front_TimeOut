@@ -1,0 +1,68 @@
+@font-face {
+  font-family: 'Extenda 80 Peta';
+  src: url('/fonts/Extenda-80-Peta-trial.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --background: #fff9f0;
+  --surface: #ffffff;
+  --text: #101828;
+  --muted: #667085;
+  --border: #d8c8b3;
+  --border-strong: #9aaec5;
+  --primary: #244874;
+  --primary-dark: #1c3b5f;
+  --primary-soft: #edf4fb;
+  --success: #12b76a;
+  --warning: #f79009;
+  --danger: #d92d20;
+  
+  /* Brand specific colors (TIMEOUT) */
+  --brand-blue: #1c3b5f;
+  --brand-blue-gradient: linear-gradient(135deg, #162f4f 0%, #244874 54%, #1c3b5f 100%);
+  --brand-cream: #f2dab7;
+  --brand-cream-hover: #ffe8c6;
+  --brand-cream-soft: rgba(242, 218, 183, 0.13);
+  --brand-cream-glow: rgba(242, 218, 183, 0.22);
+  
+  --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --font-logo: 'Extenda 80 Peta', 'Arial Black', Impact, sans-serif;
+  
+  font-family:
+    'Inter', 'Plus Jakarta Sans', Roboto, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: var(--text);
+  background: var(--background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--background);
+}
+
+button,
+input,
+select,
+textarea {
+  letter-spacing: 0;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(23, 92, 211, 0.22);
+  outline-offset: 2px;
+}

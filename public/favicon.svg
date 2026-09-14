@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <!-- Beige/cream metallic gradient for the body -->
+    <linearGradient id="bezelGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF5E0"/>
+      <stop offset="25%" stop-color="#E8D5B0"/>
+      <stop offset="50%" stop-color="#F5E6C8"/>
+      <stop offset="75%" stop-color="#D4C09A"/>
+      <stop offset="100%" stop-color="#F0DFC0"/>
+    </linearGradient>
+
+    <!-- Dark face gradient -->
+    <radialGradient id="faceGrad" cx="45%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#2A3A50"/>
+      <stop offset="70%" stop-color="#1A2538"/>
+      <stop offset="100%" stop-color="#0F1820"/>
+    </radialGradient>
+
+    <!-- Shiny highlight for glass -->
+    <radialGradient id="glassShine" cx="38%" cy="28%" r="40%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Golden accent -->
+    <linearGradient id="goldAccent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF8E8"/>
+      <stop offset="50%" stop-color="#E8D5B0"/>
+      <stop offset="100%" stop-color="#C4A96A"/>
+    </linearGradient>
+
+    <!-- Hand shine -->
+    <linearGradient id="handShine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF8E8"/>
+      <stop offset="100%" stop-color="#D4C09A"/>
+    </linearGradient>
+
+    <!-- Drop shadow -->
+    <filter id="mainShadow" x="-15%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+
+    <!-- Glow effect for hands -->
+    <filter id="handGlow">
+      <feGaussianBlur stdDeviation="0.6" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Outer glow around the whole watch -->
+    <filter id="outerGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.91  0 0 0 0 0.84  0 0 0 0 0.69  0 0 0 0.2 0" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Tick glow -->
+    <filter id="tickGlow">
+      <feGaussianBlur stdDeviation="0.4" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- ============ STOPWATCH (no background) ============ -->
+  <g filter="url(#outerGlow)">
+
+    <!-- === RING / LOOP AT TOP === -->
+    <path d="M 27 13.5 Q 27 6 32 6 Q 37 6 37 13.5"
+          fill="none" stroke="url(#bezelGrad)" stroke-width="3" stroke-linecap="round"/>
+    <!-- Ring inner highlight -->
+    <path d="M 28.2 13 Q 28.2 7.5 32 7.5 Q 35.8 7.5 35.8 13"
+          fill="none" stroke="#FFF8E8" stroke-width="0.6" stroke-linecap="round" opacity="0.45"/>
+
+    <!-- === CROWN / TOP BUTTON === -->
+    <rect x="28" y="12" width="8" height="5.5" rx="1.5" fill="url(#goldAccent)" stroke="#C4A96A" stroke-width="0.4"/>
+    <!-- Crown ridges -->
+    <line x1="30" y1="12.8" x2="30" y2="16.7" stroke="#C4A96A" stroke-width="0.5" opacity="0.45"/>
+    <line x1="32" y1="12.8" x2="32" y2="16.7" stroke="#C4A96A" stroke-width="0.5" opacity="0.45"/>
+    <line x1="34" y1="12.8" x2="34" y2="16.7" stroke="#C4A96A" stroke-width="0.5" opacity="0.45"/>
+    <!-- Crown top highlight -->
+    <line x1="29" y1="12.7" x2="35" y2="12.7" stroke="#FFF8E8" stroke-width="0.5" opacity="0.5" stroke-linecap="round"/>
+
+    <!-- === SIDE BUTTON (right, angled) === -->
+    <g transform="rotate(-35, 50, 24)">
+      <rect x="48" y="22.5" width="7" height="3.5" rx="1.2" fill="url(#goldAccent)" stroke="#C4A96A" stroke-width="0.4"/>
+      <line x1="50" y1="23.2" x2="50" y2="25.3" stroke="#C4A96A" stroke-width="0.35" opacity="0.4"/>
+      <line x1="51.5" y1="23.2" x2="51.5" y2="25.3" stroke="#C4A96A" stroke-width="0.35" opacity="0.4"/>
+      <line x1="53" y1="23.2" x2="53" y2="25.3" stroke="#C4A96A" stroke-width="0.35" opacity="0.4"/>
+    </g>
+
+    <!-- === OUTER BEZEL === -->
+    <!-- Thick bezel ring -->
+    <circle cx="32" cy="36" r="21" fill="none" stroke="url(#bezelGrad)" stroke-width="3.5"/>
+    <!-- Bezel edge highlights -->
+    <circle cx="32" cy="36" r="22.5" fill="none" stroke="#FFF5E0" stroke-width="0.3" opacity="0.3"/>
+    <circle cx="32" cy="36" r="19.5" fill="none" stroke="#C4A96A" stroke-width="0.3" opacity="0.4"/>
+
+    <!-- === WATCH FACE === -->
+    <circle cx="32" cy="36" r="19" fill="url(#faceGrad)"/>
+
+    <!-- Inner decorative ring -->
+    <circle cx="32" cy="36" r="17.2" fill="none" stroke="#E8D5B0" stroke-width="0.25" opacity="0.25"/>
+
+    <!-- === TICK MARKS === -->
+    <g filter="url(#tickGlow)">
+      <!-- Major ticks (12, 3, 6, 9) -->
+      <line x1="32" y1="18.5" x2="32" y2="22.5" stroke="#E8D5B0" stroke-width="2" stroke-linecap="round"/>
+      <line x1="32" y1="49.5" x2="32" y2="53.5" stroke="#E8D5B0" stroke-width="2" stroke-linecap="round"/>
+      <line x1="14.5" y1="36" x2="18.5" y2="36" stroke="#E8D5B0" stroke-width="2" stroke-linecap="round"/>
+      <line x1="45.5" y1="36" x2="49.5" y2="36" stroke="#E8D5B0" stroke-width="2" stroke-linecap="round"/>
+
+      <!-- Minor ticks -->
+      <!-- 1 -->
+      <line x1="40.8" y1="21.2" x2="39" y2="24.3" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 2 -->
+      <line x1="47.2" y1="27.5" x2="44.2" y2="29.2" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 4 -->
+      <line x1="47.2" y1="44.5" x2="44.2" y2="42.8" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 5 -->
+      <line x1="40.8" y1="50.8" x2="39" y2="47.7" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 7 -->
+      <line x1="23.2" y1="50.8" x2="25" y2="47.7" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 8 -->
+      <line x1="16.8" y1="44.5" x2="19.8" y2="42.8" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 10 -->
+      <line x1="16.8" y1="27.5" x2="19.8" y2="29.2" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+      <!-- 11 -->
+      <line x1="23.2" y1="21.2" x2="25" y2="24.3" stroke="#E8D5B0" stroke-width="1" stroke-linecap="round"/>
+    </g>
+
+    <!-- === CLOCK HANDS === -->
+    <!-- Minute hand (long, pointing ~2 o'clock) -->
+    <g filter="url(#handGlow)">
+      <!-- Hand shadow -->
+      <line x1="32.5" y1="36.5" x2="42.5" y2="24.5" stroke="#000000" stroke-width="2.2" stroke-linecap="round" opacity="0.2"/>
+      <!-- Main hand -->
+      <line x1="32" y1="36" x2="42" y2="24" stroke="url(#handShine)" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- Center highlight -->
+      <line x1="32" y1="36" x2="42" y2="24" stroke="#FFF8E8" stroke-width="0.7" stroke-linecap="round" opacity="0.6"/>
+    </g>
+
+    <!-- Hour hand (short, pointing ~10 o'clock) -->
+    <g filter="url(#handGlow)">
+      <line x1="32.5" y1="36.5" x2="24.5" y2="29.5" stroke="#000000" stroke-width="2.8" stroke-linecap="round" opacity="0.2"/>
+      <line x1="32" y1="36" x2="24" y2="29" stroke="url(#handShine)" stroke-width="2.8" stroke-linecap="round"/>
+      <line x1="32" y1="36" x2="24" y2="29" stroke="#FFF8E8" stroke-width="0.8" stroke-linecap="round" opacity="0.6"/>
+    </g>
+
+    <!-- Hand tails (counterbalance) -->
+    <line x1="32" y1="36" x2="29.5" y2="39.5" stroke="#E8D5B0" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="32" y1="36" x2="34.5" y2="38.5" stroke="#E8D5B0" stroke-width="1.2" stroke-linecap="round"/>
+
+    <!-- === CENTER CAP === -->
+    <circle cx="32" cy="36" r="3.5" fill="url(#goldAccent)" stroke="#C4A96A" stroke-width="0.5"/>
+    <circle cx="32" cy="36" r="2.2" fill="#E8D5B0" stroke="#C4A96A" stroke-width="0.4"/>
+    <circle cx="32" cy="36" r="1" fill="#D4C09A"/>
+    <!-- Cap highlight -->
+    <circle cx="31.2" cy="35.2" r="0.8" fill="#FFF8E8" opacity="0.5"/>
+
+    <!-- === GLASS REFLECTION === -->
+    <circle cx="32" cy="36" r="18.5" fill="url(#glassShine)"/>
+    <!-- Curved highlight streak -->
+    <path d="M 22 26 Q 28 22 38 25" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.15" stroke-linecap="round"/>
+    <path d="M 23 28 Q 27 25 34 27" fill="none" stroke="#FFFFFF" stroke-width="0.5" opacity="0.1" stroke-linecap="round"/>
+
+  </g>
+</svg>
