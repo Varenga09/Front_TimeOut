@@ -1005,6 +1005,12 @@ function VerifyEmailScreen({ session, onSession, onVerified, onLogout, onNotice,
           ? `Modo local ativado: nenhuma mensagem real foi enviada por ${selectedLabel}. Use o código 123456.`
           : response.data.data.verificationSent || response.data.data.emailSent
           ? `Novo código enviado por ${selectedLabel}`
+          : reason === 'BREVO_AUTH_FAILED'
+            ? 'A chave da API do Brevo é inválida. Atualize BREVO_API_KEY no servidor'
+            : reason === 'BREVO_SENDER_INVALID'
+              ? 'O remetente ainda não foi confirmado no Brevo'
+              : reason === 'BREVO_RATE_LIMITED'
+                ? 'O limite de envios do Brevo foi atingido. Tente novamente mais tarde'
           : reason === 'SMTP_AUTH_FAILED'
             ? 'Gmail recusou o login SMTP. Gere uma nova senha de app e atualize o .env'
             : ['SMS_NOT_CONFIGURED', 'WHATSAPP_NOT_CONFIGURED'].includes(reason)
