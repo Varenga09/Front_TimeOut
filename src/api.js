@@ -18,7 +18,8 @@ export function getAssetUrl(path) {
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  // O backend gratuito do Render pode levar cerca de um minuto para sair do repouso.
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT || 90000),
   headers: {
     'Content-Type': 'application/json',
     'X-Requested-With': 'XMLHttpRequest',
@@ -96,8 +97,12 @@ export function setAuthToken(token) {
 }
 
 export function getErrorMessage(error) {
+  if (error?.code === 'ECONNABORTED') {
+    return 'O servidor demorou para iniciar. Aguarde alguns segundos e tente novamente.'
+  }
+
   if (error?.message === 'Network Error') {
-    return 'Não foi possível conectar com a API. Confira se o backend está rodando na porta 3001 e tente novamente.'
+    return 'Não foi possível conectar com o servidor. Aguarde alguns segundos e tente novamente.'
   }
 
   return (
