@@ -852,7 +852,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
             </button>
           </div> : (
             <button
-              className="link-button"
+              className="link-button auth-back-button"
               type="button"
               onClick={() => {
                 setMode('login')

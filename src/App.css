@@ -1153,6 +1153,11 @@
   text-decoration: underline;
 }
 
+.auth-back-button {
+  display: inline-flex;
+  margin-bottom: 18px;
+}
+
 /* Responsive adjustment */
 @media (max-width: 900px) {
   .auth-page {
