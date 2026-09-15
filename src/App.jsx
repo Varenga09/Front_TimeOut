@@ -52,6 +52,7 @@ import './App.css'
 
 const SESSION_KEY = '@localfood:web:session'
 const SEARCH_HISTORY_KEY = '@localfood:web:recent-searches'
+const CART_KEY = '@localfood:web:cart'
 const CLEAR_SESSION_PARAMS = ['clearSession', 'logoutAll']
 const APP_NAVIGATION_EVENT = 'localfood:navigate'
 
@@ -308,6 +309,19 @@ function getCartUnitPrice(item) {
 
 function getCartItemsCount(cart) {
   return cart.reduce((sum, item) => sum + Number(item.cartQuantity || 0), 0)
+}
+
+function readStoredCart(storageKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey))
+    if (!Array.isArray(stored)) return []
+
+    return stored.filter((item) =>
+      item && item.id && item.seller?.id && Number(item.cartQuantity) > 0
+    )
+  } catch {
+    return []
+  }
 }
 
 function calculatePlatformFee(totalPrice) {
@@ -600,6 +614,8 @@ function LoginScreen({ onSession, onNotice, notice }) {
   const [showPassword, setShowPassword] = useState(false)
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, feedback: [] })
   const [formErrors, setFormErrors] = useState({})
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [recoveryRequested, setRecoveryRequested] = useState(false)
 
   const validateForm = () => {
     const errors = {}
@@ -610,10 +626,19 @@ function LoginScreen({ onSession, onNotice, notice }) {
       errors.email = 'E-mail inválido'
     }
     
+    if (mode === 'forgot' && !recoveryRequested) {
+      setFormErrors(errors)
+      return Object.keys(errors).length === 0
+    }
+
     if (!form.password) {
       errors.password = 'Senha é obrigatória'
-    } else if (mode === 'register' && passwordStrength.score < 3) {
-      errors.password = 'Senha muito fraca'
+    } else if (['register', 'forgot'].includes(mode) && passwordStrength.feedback.length > 0) {
+      errors.password = 'A senha ainda não cumpre todos os requisitos'
+    }
+
+    if (mode === 'forgot' && !/^\d{6}$/.test(recoveryCode.trim())) {
+      errors.recoveryCode = 'Informe o código de 6 dígitos'
     }
     
     if (mode === 'register' && !form.name) {
@@ -663,6 +688,28 @@ function LoginScreen({ onSession, onNotice, notice }) {
     setLoading(true)
     
     try {
+      if (mode === 'forgot') {
+        if (!recoveryRequested) {
+          await api.post('/auth/password/forgot', { email: form.email })
+          setRecoveryRequested(true)
+          onNotice('Se o e-mail estiver cadastrado, o código será enviado em instantes.')
+          return
+        }
+
+        await api.post('/auth/password/reset', {
+          email: form.email,
+          code: recoveryCode.trim(),
+          password: form.password,
+        })
+        setMode('login')
+        setRecoveryRequested(false)
+        setRecoveryCode('')
+        setForm((current) => ({ ...current, password: '' }))
+        setPasswordStrength({ score: 0, feedback: [] })
+        onNotice('Senha alterada com sucesso. Entre com a nova senha.')
+        return
+      }
+
       if (mode === 'register') {
         await api.post('/auth/register', {
           name: form.name,
@@ -762,7 +809,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
         <div className="auth-copy">
           <h2>Venda e compre no mesmo ambiente, sem bagunça.</h2>
           <p>
-            Uma plataforma de pedidos moderna e segura, com criptografia de ponta a ponta feito sob medida para condomínios, escolas e escritórios.
+            Uma plataforma de pedidos moderna e segura, com proteção de acesso feita sob medida para condomínios, escolas e escritórios.
           </p>
         </div>
       </section>
@@ -770,15 +817,19 @@ function LoginScreen({ onSession, onNotice, notice }) {
       <form className="auth-form" onSubmit={submit}>
         <div className="form-card">
           <div className="form-heading">
-            <h2>{mode === 'login' ? 'Boas-vindas!' : 'Criar conta'}</h2>
+            <h2>{mode === 'login' ? 'Boas-vindas!' : mode === 'register' ? 'Criar conta' : 'Recuperar senha'}</h2>
             <p>
               {mode === 'login'
                 ? 'Informe seu e-mail e senha para acessar o TimeOut.'
-                : 'Crie sua conta gratuitamente para começar a fazer pedidos.'}
+                : mode === 'register'
+                  ? 'Crie sua conta gratuitamente para começar a fazer pedidos.'
+                  : recoveryRequested
+                    ? 'Informe o código recebido e escolha uma nova senha.'
+                    : 'Informe seu e-mail para receber um código de recuperação.'}
             </p>
           </div>
 
-          <div className="mode-toggle">
+          {mode !== 'forgot' ? <div className="mode-toggle">
             <button
               className={mode === 'login' ? 'active' : ''}
               type="button"
@@ -799,7 +850,20 @@ function LoginScreen({ onSession, onNotice, notice }) {
             >
               Cadastro
             </button>
-          </div>
+          </div> : (
+            <button
+              className="link-button"
+              type="button"
+              onClick={() => {
+                setMode('login')
+                setRecoveryRequested(false)
+                setRecoveryCode('')
+                setFormErrors({})
+              }}
+            >
+              Voltar para o login
+            </button>
+          )}
 
           {mode === 'register' && (
             <div className="form-field">
@@ -837,7 +901,27 @@ function LoginScreen({ onSession, onNotice, notice }) {
             {formErrors.email && <span className="error-text">{formErrors.email}</span>}
           </div>
 
-          <div className="form-field">
+          {mode === 'forgot' && recoveryRequested ? (
+            <div className="form-field">
+              <label htmlFor="recoveryCode">Código de recuperação</label>
+              <div className="input-wrapper">
+                <Hash className="input-icon" size={18} />
+                <input
+                  id="recoveryCode"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={recoveryCode}
+                  onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  required
+                  className={formErrors.recoveryCode ? 'error' : ''}
+                />
+              </div>
+              {formErrors.recoveryCode && <span className="error-text">{formErrors.recoveryCode}</span>}
+            </div>
+          ) : null}
+
+          {mode !== 'forgot' || recoveryRequested ? <div className="form-field">
             <label htmlFor="password">Senha</label>
             <div className="input-wrapper">
               <Lock className="input-icon" size={18} />
@@ -847,7 +931,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
                 value={form.password}
                 onChange={(event) => handlePasswordChange(event.target.value)}
                 placeholder="Digite sua senha"
-                minLength={mode === 'register' ? 8 : 6}
+                minLength={['register', 'forgot'].includes(mode) ? 8 : 6}
                 required
                 className={formErrors.password ? 'error' : ''}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -862,7 +946,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
               </button>
             </div>
             
-            {mode === 'register' && (
+            {['register', 'forgot'].includes(mode) && (
               <div className="password-strength">
                 <div className="strength-bar">
                   <div 
@@ -881,7 +965,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
               </div>
             )}
             
-            {mode === 'register' && passwordStrength.feedback.length > 0 && (
+            {['register', 'forgot'].includes(mode) && passwordStrength.feedback.length > 0 && (
               <div className="password-feedback">
                 <ul>
                   {passwordStrength.feedback.map((item, index) => (
@@ -892,7 +976,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
             )}
             
             {formErrors.password && <span className="error-text">{formErrors.password}</span>}
-          </div>
+          </div> : null}
 
           {mode === 'register' && (
             <>
@@ -934,8 +1018,8 @@ function LoginScreen({ onSession, onNotice, notice }) {
           <div className="security-card">
             <ShieldCheck size={20} className="security-icon" />
             <div className="security-content">
-              <strong>Acesso Criptografado</strong>
-              <span>Seus dados de acesso estão sob proteção de segurança de ponta.</span>
+              <strong>Acesso protegido</strong>
+              <span>Sua senha é armazenada de forma protegida e nunca aparece em texto aberto.</span>
             </div>
           </div>
 
@@ -946,7 +1030,15 @@ function LoginScreen({ onSession, onNotice, notice }) {
               <span className="spinner"></span>
             ) : (
               <>
-                <span>{mode === 'login' ? 'Entrar no TimeOut' : 'Criar minha conta'}</span>
+                <span>
+                  {mode === 'login'
+                    ? 'Entrar no TimeOut'
+                    : mode === 'register'
+                      ? 'Criar minha conta'
+                      : recoveryRequested
+                        ? 'Alterar senha'
+                        : 'Enviar código'}
+                </span>
                 <ArrowRight size={18} />
               </>
             )}
@@ -955,7 +1047,16 @@ function LoginScreen({ onSession, onNotice, notice }) {
           {mode === 'login' && (
             <div className="login-help">
               <span className="help-text">Esqueceu sua senha?</span>
-              <button type="button" className="link-button" onClick={() => onNotice('Entre em contato com o administrador do seu ambiente.')}>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  setMode('forgot')
+                  setForm((current) => ({ ...current, password: '' }))
+                  setPasswordStrength({ score: 0, feedback: [] })
+                  setFormErrors({})
+                }}
+              >
                 Recuperar acesso
               </button>
             </div>
@@ -1331,6 +1432,7 @@ function Shell({
 }
 
 function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
+  const cartStorageKey = `${CART_KEY}:${session.user.id}:${session.user.environmentId}`
   const [view, setView] = useState(session.user.role === 'seller' ? 'seller-orders' : 'market')
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
@@ -1341,7 +1443,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [paymentSettings, setPaymentSettings] = useState(null)
   const [sellerPaymentSettings, setSellerPaymentSettings] = useState(defaultPaymentSettings)
   const [environments, setEnvironments] = useState([])
-  const [cart, setCart] = useState([])
+  const [cart, setCart] = useState(() => readStoredCart(cartStorageKey))
   const [checkoutResult, setCheckoutResult] = useState(null)
   const [cartToast, setCartToast] = useState('')
   const [selectedProduct, setSelectedProduct] = useState(null)
@@ -1359,8 +1461,19 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   })
   const cartToastTimerRef = useRef(null)
+  const cartStorageKeyRef = useRef(cartStorageKey)
 
   const user = session.user
+
+  useEffect(() => {
+    if (cartStorageKeyRef.current !== cartStorageKey) {
+      cartStorageKeyRef.current = cartStorageKey
+      setCart(readStoredCart(cartStorageKey))
+      return
+    }
+
+    localStorage.setItem(cartStorageKey, JSON.stringify(cart))
+  }, [cart, cartStorageKey])
 
   useEffect(() => {
     function handleNavigation(event) {
@@ -1772,11 +1885,20 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
     try {
       const response = await api.put(`/users/${user.id}`, requestData)
+
+      if (profileData.password) {
+        onNotice('Senha alterada. Entre novamente com a nova senha.')
+        onLogout()
+        return true
+      }
+
       onSessionUser(response.data.data.user)
       onNotice('Perfil atualizado')
       await refresh()
+      return true
     } catch (error) {
       onNotice(getErrorMessage(error))
+      return false
     }
   }
 
@@ -1784,7 +1906,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       const response = await api.post('/sellers/request', { cpf })
       onSessionUser(response.data.data.user)
-      onNotice('Perfil de vendedor ativado')
+      onNotice('CPF validado e perfil de vendedor ativado')
       setView('seller-products')
       await refresh()
     } catch (error) {
@@ -1792,9 +1914,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   }
 
-  async function requestAdminProfile(adminCode) {
+  async function requestAdminProfile(adminCode, currentPassword) {
     try {
-      const response = await api.patch('/users/me/admin', { adminCode })
+      const response = await api.patch('/users/me/admin', { adminCode, currentPassword })
       onSessionUser(response.data.data.user)
       onNotice('Perfil de administrador ativado')
       setView('admin-environments')
@@ -1808,7 +1930,6 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       const response = await api.post('/environments/join', { accessCode })
       onSessionUser(response.data.data.user)
-      setCart([])
       setView('market')
       onNotice('Você entrou no ambiente')
       await refresh()
@@ -1821,7 +1942,6 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       const response = await api.patch(`/environments/${environmentId}/switch`)
       onSessionUser(response.data.data.user)
-      setCart([])
       setView('market')
       onNotice('Ambiente alterado')
       await refresh()
@@ -1835,7 +1955,6 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       const response = await api.post('/environments', payload)
       if (response.data.data.user) {
         onSessionUser(response.data.data.user)
-        setCart([])
       }
       onNotice('Novo lugar de venda criado')
       setView('admin-environments')
@@ -3828,6 +3947,7 @@ function ProfileView({
 }) {
   const [sellerCpf, setSellerCpf] = useState('')
   const [adminCode, setAdminCode] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
   const [environmentCode, setEnvironmentCode] = useState('')
   const [environmentForm, setEnvironmentForm] = useState({
     name: '',
@@ -3840,6 +3960,7 @@ function ProfileView({
     email: user.email,
     phone: user.phone || '',
     password: '',
+    currentPassword: '',
     profileImageUrl: user.profileImageUrl || '',
     profileImageFile: null,
   })
@@ -3861,10 +3982,13 @@ function ProfileView({
     const payload = {
       ...form,
       password: form.password || undefined,
+      currentPassword: form.password ? form.currentPassword : undefined,
     }
 
-    await onSave(payload)
-    setForm((current) => ({ ...current, password: '', profileImageFile: null }))
+    const saved = await onSave(payload)
+    if (saved) {
+      setForm((current) => ({ ...current, password: '', currentPassword: '', profileImageFile: null }))
+    }
   }
 
   async function createEnvironment() {
@@ -3912,7 +4036,7 @@ function ProfileView({
             {user.role !== 'customer' ? (
               <span>
                 <IdCard size={15} />
-                {user.cpfVerifiedAt ? 'CPF confirmado' : 'CPF pendente'}
+                {user.cpfVerifiedAt ? 'CPF matematicamente validado' : 'CPF não validado'}
               </span>
             ) : null}
           </div>
@@ -3925,7 +4049,7 @@ function ProfileView({
             </div>
             <div>
               <h3>Começar a vender</h3>
-              <p>Confirme um CPF válido para cadastrar produtos e receber pedidos no seu ambiente.</p>
+              <p>Informe um CPF matematicamente válido e de sua titularidade para cadastrar produtos.</p>
               <label>
                 CPF
                 <input
@@ -3942,7 +4066,7 @@ function ProfileView({
                 disabled={!user.emailVerifiedAt && !user.phoneVerifiedAt}
               >
                 <UserCheck size={17} />
-                Confirmar CPF e ativar vendedor
+                Validar CPF e ativar vendedor
               </button>
             </div>
           </article>
@@ -3955,20 +4079,29 @@ function ProfileView({
             </div>
             <div>
               <h3>Tornar-se administrador</h3>
-              <p>Use o código interno para gerenciar ambientes, usuários e categorias.</p>
+              <p>Use um código de convite fornecido com segurança por um administrador.</p>
               <label>
                 Código de administrador
                 <input
                   value={adminCode}
                   onChange={(event) => setAdminCode(event.target.value)}
-                  placeholder="Ex: LOCALFOOD2026"
+                  placeholder="Código de convite"
+                />
+              </label>
+              <label>
+                Sua senha atual
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(event) => setAdminPassword(event.target.value)}
+                  autoComplete="current-password"
                 />
               </label>
               <button
                 className="primary-button compact-button"
                 type="button"
-                onClick={() => onRequestAdmin(adminCode)}
-                disabled={!adminCode.trim()}
+                onClick={() => onRequestAdmin(adminCode, adminPassword)}
+                disabled={!adminCode.trim() || !adminPassword}
               >
                 <ShieldCheck size={17} />
                 Ativar administrador
@@ -4119,12 +4252,25 @@ function ProfileView({
           Nova senha
           <input
             type="password"
-            minLength={6}
+            minLength={8}
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
             placeholder="Preencha apenas se quiser trocar"
           />
         </label>
+        {form.password ? (
+          <label>
+            Senha atual
+            <input
+              type="password"
+              value={form.currentPassword}
+              onChange={(event) => setForm({ ...form, currentPassword: event.target.value })}
+              placeholder="Confirme sua senha atual"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+        ) : null}
         <button className="primary-button" type="submit">
           <Check size={18} />
           Salvar perfil
@@ -4189,7 +4335,7 @@ function AdminUsersView({ users, currentUserId, filters, onFilter, onRole, onDel
               </span>
               <span className="mini-contact">
                 <IdCard size={14} />
-                {item.cpfVerifiedAt ? 'CPF confirmado' : 'CPF pendente'}
+                {item.cpfVerifiedAt ? 'CPF matematicamente validado' : 'CPF não validado'}
               </span>
             </div>
             <span className={`role-badge ${item.role}`}>{roleLabel(item.role)}</span>

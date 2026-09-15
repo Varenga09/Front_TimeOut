@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import App from './App'
 import { api } from './api'
@@ -53,7 +53,25 @@ describe('Tela de acesso', () => {
     expect(passwordInput).toHaveAttribute('type', 'password')
   })
 
-  test('mostra confirmação para conta ainda não verificada', () => {
+  test('solicita código para recuperar a senha', async () => {
+    api.post.mockResolvedValue({ data: { data: { accepted: true } } })
+    render(createElement(App))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar acesso' }))
+    fireEvent.change(screen.getByLabelText('E-mail'), {
+      target: { value: 'pessoa@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/auth/password/forgot', {
+        email: 'pessoa@example.com',
+      })
+    })
+    expect(screen.getByLabelText('Código de recuperação')).toBeInTheDocument()
+  })
+
+  test('mostra confirmação para conta ainda não verificada', async () => {
     const session = {
       token: 'token-teste',
       user: {
@@ -73,7 +91,7 @@ describe('Tela de acesso', () => {
 
     render(createElement(App))
 
-    expect(screen.getByRole('heading', { name: 'Confirme sua conta' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Confirme sua conta' })).toBeInTheDocument()
     expect(screen.getByText('Código de verificação')).toBeInTheDocument()
   })
 })

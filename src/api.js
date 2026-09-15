@@ -27,6 +27,15 @@ export const api = axios.create({
   withCredentials: true,
 })
 
+function getRequestEmail(data) {
+  try {
+    const payload = typeof data === 'string' ? JSON.parse(data) : data
+    return payload?.email || ''
+  } catch {
+    return ''
+  }
+}
+
 // Security interceptors
 api.interceptors.request.use(
   (config) => {
@@ -52,7 +61,7 @@ api.interceptors.response.use(
   (response) => {
     // Track successful authentication
     if (response.config.url?.includes('/auth/login')) {
-      const email = response.config.data?.email
+      const email = getRequestEmail(response.config.data)
       if (email) {
         SecurityMonitor.trackLoginAttempt(email, true)
       }
@@ -63,7 +72,7 @@ api.interceptors.response.use(
   (error) => {
     // Track failed authentication attempts
     if (error.config?.url?.includes('/auth/login')) {
-      const email = error.config.data?.email
+      const email = getRequestEmail(error.config.data)
       if (email) {
         SecurityMonitor.trackLoginAttempt(email, false)
       }

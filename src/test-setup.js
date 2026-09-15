@@ -27,7 +27,10 @@ const localStorageMock = {
   removeItem: vi.fn(),
   clear: vi.fn(),
 }
-globalThis.localStorage = localStorageMock
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: localStorageMock,
+})
 
 // Mock resize observer
 globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
