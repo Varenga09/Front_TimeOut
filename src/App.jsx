@@ -1478,6 +1478,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [adminMonetization, setAdminMonetization] = useState(null)
   const [adminPayoutOverview, setAdminPayoutOverview] = useState(null)
   const [platformPayoutOverview, setPlatformPayoutOverview] = useState(null)
+  const [financialQuery, setFinancialQuery] = useState({ page: 1, limit: 10, status: '', dateFrom: '', dateTo: '', order: 'desc' })
+  const [adminFinancialQuery, setAdminFinancialQuery] = useState({ page: 1, limit: 10, status: '', dateFrom: '', dateTo: '', order: 'desc' })
+  const [platformFinancialQuery, setPlatformFinancialQuery] = useState({ page: 1, limit: 10, status: '', dateFrom: '', dateTo: '', order: 'desc', environmentId: '' })
   const [accessData, setAccessData] = useState({ sellerApplications: [], environmentApplications: [] })
   const [environmentAccess, setEnvironmentAccess] = useState(null)
   const [platformAccess, setPlatformAccess] = useState(null)
@@ -1593,9 +1596,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   const loadFinancialOverview = useCallback(async () => {
     if (!isApprovedSeller) return
-    const response = await api.get('/payments/payout-account')
+    const response = await api.get('/payments/payout-account', { params: financialQuery })
     setFinancialOverview(response.data.data)
-  }, [isApprovedSeller])
+  }, [financialQuery, isApprovedSeller])
 
   const loadAdminMonetization = useCallback(async () => {
     if (!isAdmin) return
@@ -1605,15 +1608,15 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   const loadAdminPayoutOverview = useCallback(async () => {
     if (!isAdmin) return
-    const response = await api.get('/payments/admin/overview')
+    const response = await api.get('/payments/admin/overview', { params: adminFinancialQuery })
     setAdminPayoutOverview(response.data.data)
-  }, [isAdmin])
+  }, [adminFinancialQuery, isAdmin])
 
   const loadPlatformPayoutOverview = useCallback(async () => {
     if (!isPlatformAdmin) return
-    const response = await api.get('/payments/platform/overview')
+    const response = await api.get('/payments/platform/overview', { params: platformFinancialQuery })
     setPlatformPayoutOverview(response.data.data)
-  }, [isPlatformAdmin])
+  }, [isPlatformAdmin, platformFinancialQuery])
 
   const loadAccessData = useCallback(async () => {
     const [applicationsResponse, notificationsResponse] = await Promise.all([
@@ -2015,6 +2018,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       await api.patch(`/payments/admin/accounts/${sellerId}/status`, { suspended })
       onNotice(suspended ? 'Conta de recebimento suspensa' : 'Conta de recebimento reativada')
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
+  async function retrySettlement(orderId) {
+    try {
+      await api.post(`/payments/admin/orders/${orderId}/retry-settlement`)
+      onNotice('Nova tentativa de liberação concluída')
       await refresh()
     } catch (error) {
       onNotice(getErrorMessage(error))
@@ -2458,6 +2471,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           overview={financialOverview}
           onSave={savePaymentSettings}
           onConnect={connectPayoutAccount}
+          query={financialQuery}
+          onQuery={setFinancialQuery}
         />
       )}
 
@@ -2465,6 +2480,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         <SellerFinancialView
           overview={financialOverview}
           onPlans={() => setView('plans')}
+          query={financialQuery}
+          onQuery={setFinancialQuery}
         />
       )}
 
@@ -2513,6 +2530,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onChangePlan={changeSellerPlan}
           onSaveInstitutional={saveInstitutionalConfig}
           onPayoutStatus={updatePayoutAccountStatus}
+          financialQuery={adminFinancialQuery}
+          onFinancialQuery={setAdminFinancialQuery}
+          onRetrySettlement={retrySettlement}
         />
       )}
 
@@ -2537,6 +2557,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onToggleAdministrator={toggleAdministratorStatus}
           onViewDocument={viewApplicationDocument}
           onRevealCpf={(id) => revealApplicationCpf('environment', id)}
+          financialQuery={platformFinancialQuery}
+          onFinancialQuery={setPlatformFinancialQuery}
+          onRetrySettlement={retrySettlement}
         />
       )}
 
@@ -3269,7 +3292,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
   )
 }
 
-function PaymentSettingsView({ settings, overview, onSave, onConnect }) {
+function PaymentSettingsView({ settings, overview, onSave, onConnect, query, onQuery }) {
   const [form, setForm] = useState(() => ({ ...defaultPaymentSettings, ...settings }))
   const [accountForm, setAccountForm] = useState({
     responsibleName: '',
@@ -3373,10 +3396,12 @@ function PaymentSettingsView({ settings, overview, onSave, onConnect }) {
               <div><span>Líquido</span><strong>{money.format(Number(transaction.sellerNetAmount || 0))}</strong></div>
               <span className={`transaction-status ${transaction.status}`}>{transactionStatusLabels[transaction.status] || transaction.status}</span>
               <span className="experimental-pill">Pagamento simulado</span>
+              {transaction.settlementBlockedReason ? <span className="settlement-blocked-note">Recebimento retido até a regularização da conta.</span> : null}
             </div>
           ))}
         </div>
         {transactions.length === 0 ? <EmptyState text="Nenhuma transação simulada registrada ainda." /> : null}
+        <FinancialHistoryControls overview={overview} query={query} onQuery={onQuery} />
       </div>
     </section>
   )
@@ -4363,7 +4388,7 @@ function PlansView({ plans, subscription, userRole, onChoose, onProfile }) {
   )
 }
 
-function SellerFinancialView({ overview, onPlans }) {
+function SellerFinancialView({ overview, onPlans, query, onQuery }) {
   if (!overview) return <EmptyState text="Carregando dados financeiros..." />
 
   const { subscription, summary, transactions = [] } = overview
@@ -4417,12 +4442,67 @@ function SellerFinancialView({ overview, onPlans }) {
               <span className={`transaction-status ${transaction.status}`}>
                 {transactionStatusLabels[transaction.status] || transaction.status}
               </span>
+              {transaction.settlementBlockedReason ? <span className="settlement-blocked-note">Recebimento retido: regularize a conta de recebimento.</span> : null}
             </div>
           ))}
         </div>
         {transactions.length === 0 ? <EmptyState text="Nenhum pagamento simulado registrado ainda." /> : null}
+        <FinancialHistoryControls overview={overview} query={query} onQuery={onQuery} />
       </div>
     </section>
+  )
+}
+
+function FinancialHistoryControls({ overview, query, onQuery, environments = [] }) {
+  if (!query || !onQuery) return null
+  const page = Number(overview?.page || query.page || 1)
+  const totalPages = Number(overview?.totalPages || 1)
+  const update = (changes) => onQuery((current) => ({ ...current, page: 1, ...changes }))
+  return (
+    <div className="financial-history-controls">
+      <div className="financial-history-filters">
+        <select value={query.status} onChange={(event) => update({ status: event.target.value })} aria-label="Filtrar por status">
+          <option value="">Todos os status</option>
+          {Object.entries(transactionStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <label>De<input type="date" value={query.dateFrom} onChange={(event) => update({ dateFrom: event.target.value })} /></label>
+        <label>Até<input type="date" value={query.dateTo} onChange={(event) => update({ dateTo: event.target.value })} /></label>
+        <select value={query.order} onChange={(event) => update({ order: event.target.value })} aria-label="Ordenar histórico">
+          <option value="desc">Mais recentes</option>
+          <option value="asc">Mais antigas</option>
+        </select>
+        {environments.length ? (
+          <select value={query.environmentId || ''} onChange={(event) => update({ environmentId: event.target.value })} aria-label="Filtrar por ambiente">
+            <option value="">Todos os ambientes</option>
+            {environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}
+          </select>
+        ) : null}
+      </div>
+      <div className="pagination-bar">
+        <span>{overview?.total || 0} registros · página {page} de {totalPages}</span>
+        <div className="row-actions">
+          <button className="ghost-button" type="button" disabled={page <= 1} onClick={() => onQuery((current) => ({ ...current, page: page - 1 }))}>Anterior</button>
+          <button className="ghost-button" type="button" disabled={page >= totalPages} onClick={() => onQuery((current) => ({ ...current, page: page + 1 }))}>Próxima</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RetainedTransactions({ overview, onRetry }) {
+  const retained = (overview?.transactions || []).filter((transaction) => transaction.settlementBlockedReason)
+  if (!retained.length) return null
+  return (
+    <div className="retained-transactions">
+      <div className="section-heading compact-heading"><h3>Recebimentos retidos</h3><span>{retained.length}</span></div>
+      {retained.map((transaction) => (
+        <article className="application-card" key={transaction.id}>
+          <div><strong>Pedido #{transaction.orderId}</strong><span className="status-badge suspended">Retido</span></div>
+          <p>O recebimento não foi liberado porque a conta do vendedor está indisponível. Reative a conta antes de tentar novamente.</p>
+          <button className="ghost-button" type="button" onClick={() => onRetry(transaction.orderId)}><RefreshCcw size={16} /> Tentar liberar novamente</button>
+        </article>
+      ))}
+    </div>
   )
 }
 
@@ -4574,7 +4654,7 @@ function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, 
     <section className="main-column full access-page">
       <div className="section-heading"><div><span className="eyebrow">Administrador do ambiente</span><h2>Acessos e aprovações</h2></div><span className="experimental-pill"><ShieldCheck size={15} /> {data.identityVerificationMode === 'mock' ? 'Ambiente de teste: validações externas estão desativadas.' : 'Fluxo interno'}</span></div>
       <article className="approval-panel code-management">
-        <div><PanelHeader icon={KeyRound} title="Código de acesso" /><p>Código atual: <strong>{data.accessCode?.codePreview || 'Código legado ativo'}</strong></p></div>
+        <div><PanelHeader icon={KeyRound} title="Código de acesso" /><p>Código atual: <strong>{data.accessCode?.codePreview || 'Prévia indisponível'}</strong></p></div>
         <div className="row-actions"><button className="ghost-button" type="button" onClick={onRotateCode}><RefreshCcw size={16} /> Gerar novo</button>{data.environment?.accessCodeEnabled ? <button className="ghost-button" type="button" onClick={() => onToggleCode(false)}><Lock size={16} /> Desativar</button> : <button className="ghost-button" type="button" onClick={() => onToggleCode(true)}><Check size={16} /> Ativar</button>}</div>
       </article>
       <label className="decision-reason">Justificativa para correção, recusa ou suspensão<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explique a decisão para o solicitante" /></label>
@@ -4591,7 +4671,7 @@ function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, 
   )
 }
 
-function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onRevealCpf }) {
+function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onRevealCpf, financialQuery, onFinancialQuery, onRetrySettlement }) {
   const [reason, setReason] = useState('')
   const [transfers, setTransfers] = useState({})
   if (!data) return <EmptyState text="Carregando painel da equipe TimeOut..." />
@@ -4599,11 +4679,15 @@ function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggl
     <section className="main-column full access-page">
       <div className="section-heading"><div><span className="eyebrow">Equipe interna TimeOut</span><h2>Governança da plataforma</h2><p className="section-subtitle">Aprovações, ambientes, responsáveis e auditoria.</p></div><span className="experimental-pill"><ShieldCheck size={15} /> {data.identityVerificationMode === 'mock' ? 'Ambiente de teste: validações externas estão desativadas.' : 'Acesso restrito'}</span></div>
       {payoutOverview ? (
-        <div className="metrics-grid financial-metrics">
-          <article className="metric-card"><span>Contas de teste</span><strong>{payoutOverview.accounts?.length || 0}</strong></article>
-          <article className="metric-card"><span>Total bruto movimentado</span><strong>{money.format(Number(payoutOverview.summary?.grossMoved || 0))}</strong></article>
-          <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(payoutOverview.summary?.commissions || 0))}</strong></article>
-          <article className="metric-card"><span>Líquido dos vendedores</span><strong>{money.format(Number(payoutOverview.summary?.netAvailable || 0))}</strong></article>
+        <div className="admin-monetization-section">
+          <div className="metrics-grid financial-metrics">
+            <article className="metric-card"><span>Contas de teste</span><strong>{payoutOverview.accounts?.length || 0}</strong></article>
+            <article className="metric-card"><span>Total bruto movimentado</span><strong>{money.format(Number(payoutOverview.summary?.grossMoved || 0))}</strong></article>
+            <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(payoutOverview.summary?.commissions || 0))}</strong></article>
+            <article className="metric-card"><span>Líquido dos vendedores</span><strong>{money.format(Number(payoutOverview.summary?.netAvailable || 0))}</strong></article>
+          </div>
+          <RetainedTransactions overview={payoutOverview} onRetry={onRetrySettlement} />
+          <FinancialHistoryControls overview={payoutOverview} query={financialQuery} onQuery={onFinancialQuery} environments={data.environments || []} />
         </div>
       ) : null}
       <label className="decision-reason">Justificativa da decisão<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Obrigatória para correções e recusas" /></label>
@@ -4619,7 +4703,7 @@ function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggl
   )
 }
 
-function AdminMonetizationView({ overview, payoutOverview, plans, onReviewRequest, onChangePlan, onSaveInstitutional, onPayoutStatus }) {
+function AdminMonetizationView({ overview, payoutOverview, plans, onReviewRequest, onChangePlan, onSaveInstitutional, onPayoutStatus, financialQuery, onFinancialQuery, onRetrySettlement }) {
   const initialConfig = overview?.environment?.institutionalPlanConfig || {}
   const [institutional, setInstitutional] = useState({
     displayName: initialConfig.displayName || '',
@@ -4686,6 +4770,8 @@ function AdminMonetizationView({ overview, payoutOverview, plans, onReviewReques
               {(payoutOverview.sellersWithoutAccount || []).length === 0 ? <p className="muted-note">Todos os vendedores possuem uma conta de teste.</p> : null}
             </div>
           </div>
+          <RetainedTransactions overview={payoutOverview} onRetry={onRetrySettlement} />
+          <FinancialHistoryControls overview={payoutOverview} query={financialQuery} onQuery={onFinancialQuery} />
         </div>
       ) : null}
 

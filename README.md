@@ -19,7 +19,7 @@ Frontend web do LocalFood, uma plataforma de pedidos locais para escolas, empres
 - Solicitacao de vendedor com aprovacao administrativa.
 - Comparacao dos planos Basico, Pro e Institucional.
 - Painel financeiro do vendedor com faturamento, comissoes e receita liquida.
-- Area de Recebimentos com conta ficticia, valores reservados, liquidados e reembolsados.
+- Area de Recebimentos com conta ficticia, valores reservados, liquidados e reembolsados, filtros e historico paginado.
 - Central administrativa de monetizacao e pagamentos simulados.
 - Solicitacoes completas de vendedor e de criacao de ambiente.
 - Aprovacao de participantes em ambientes privados.
@@ -107,8 +107,10 @@ SENAI2026
 7. Entre como vendedor e abra "Pedidos recebidos".
 8. Atualize o pedido para aceito, preparando, pronto e entregue.
 9. Confira em `Recebimentos` que o valor reservado virou saldo liquido somente depois da entrega.
-10. Compare os planos e teste a troca entre Basico e Pro; pedidos antigos mantem a taxa original.
-11. Entre como equipe TimeOut para analisar ambientes, transferir responsaveis e conferir a auditoria.
+10. Suspenda a conta de teste, entregue outro pedido e confirme que o recebimento fica retido.
+11. Reative a conta como administrador e use `Tentar liberar novamente`.
+12. Compare os planos e teste a troca entre Basico e Pro; pedidos antigos mantem a taxa original.
+13. Entre como equipe TimeOut para analisar ambientes, transferir responsaveis e conferir a auditoria.
 
 ## Scripts
 
@@ -135,6 +137,8 @@ src/
 - Todos os pagamentos desta fase sao simulados e nao movimentam dinheiro real.
 - O cliente escolhe se a simulacao sera aprovada, pendente ou recusada.
 - Uma aprovacao reserva o valor; a divisao entre TimeOut e vendedor so e confirmada na entrega.
+- Conta suspensa nao libera comissao nem saldo; a nova tentativa fica disponível apenas para administradores autorizados.
+- Codigos completos de ambiente aparecem uma unica vez. Depois disso, o painel mostra somente a previa mascarada.
 - Nenhuma tela solicita chave Pix pessoal, conta bancaria, senha ou cartao do vendedor.
 - As mensalidades dos planos tambem sao simuladas.
 - O vendedor e o cliente precisam estar no mesmo ambiente.
