@@ -20,6 +20,10 @@ Frontend web do LocalFood, uma plataforma de pedidos locais para escolas, empres
 - Comparacao dos planos Basico, Pro e Institucional.
 - Painel financeiro do vendedor com faturamento, comissoes e receita liquida.
 - Central administrativa de monetizacao e pagamentos simulados.
+- Solicitacoes completas de vendedor e de criacao de ambiente.
+- Aprovacao de participantes em ambientes privados.
+- Painel exclusivo da equipe TimeOut para ambientes e administradores.
+- Notificacoes internas, linha do tempo e auditoria.
 
 ## Tecnologias
 
@@ -77,17 +81,12 @@ http://localhost:5173
 Essas contas sao criadas pelo seeder do backend:
 
 ```txt
-Cliente
-email: mateus@localfood.com
-senha: 123456
+Cliente: cliente@timeout.local
+Vendedor pendente: pendente@timeout.local
+Administrador do ambiente: admin.ambiente@timeout.local
+Equipe TimeOut: platform@timeout.local
 
-Vendedor
-email: vendedor@localfood.com
-senha: 123456
-
-Admin
-email: admin@localfood.com
-senha: 123456
+Senha comum: TimeOutDev#2026
 ```
 
 Codigo do ambiente para novos cadastros:
@@ -102,12 +101,12 @@ SENAI2026
 2. Veja a vitrine de produtos.
 3. Adicione Coxinha e Suco ao carrinho.
 4. Envie o pedido e escolha o resultado simulado do pagamento.
-5. Entre como admin e aprove uma solicitacao de vendedor em "Monetizacao".
+5. Entre como administrador e aprove uma solicitacao de vendedor em "Acessos e aprovacoes".
 6. Entre como vendedor e abra "Pedidos recebidos".
 7. Atualize o pedido para aceito, preparando, pronto e entregue.
 8. Confira a comissao confirmada na pagina "Financeiro".
 9. Compare os planos e teste a troca entre Basico e Pro.
-10. Use o painel administrativo para conferir vendedores, planos e comissoes.
+10. Entre como equipe TimeOut para analisar ambientes, transferir responsaveis e conferir a auditoria.
 
 ## Scripts
 
