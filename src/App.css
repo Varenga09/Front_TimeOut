@@ -4394,3 +4394,340 @@ body,
     border: 2px solid #fff;
   }
 }
+
+/* Experimental monetization */
+.monetization-page {
+  display: grid;
+  gap: 22px;
+}
+
+.plans-heading {
+  align-items: flex-start;
+}
+
+.experimental-pill,
+.active-plan-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #b9e4d2;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #ecfbf4;
+  color: #087a52;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.plan-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  padding: 22px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(8, 47, 80, 0.07);
+}
+
+.plan-card.featured {
+  border: 2px solid #ffad1f;
+  box-shadow: 0 12px 30px rgba(255, 173, 31, 0.15);
+}
+
+.plan-card-header {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eef5fb;
+  color: #082f50;
+}
+
+.plan-card.featured .plan-icon {
+  background: #fff1d6;
+  color: #a96100;
+}
+
+.plan-card h3 {
+  margin: 20px 0 6px;
+  color: #082f50;
+  font-size: 24px;
+}
+
+.plan-card > p {
+  min-height: 48px;
+  margin: 0;
+  color: #65758a;
+  line-height: 1.55;
+}
+
+.plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 20px 0 14px;
+}
+
+.plan-price strong {
+  color: #082f50;
+  font-size: 30px;
+}
+
+.plan-price span,
+.commission-highlight span {
+  color: #738398;
+  font-size: 12px;
+}
+
+.commission-highlight {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #e3e9ef;
+  border-radius: 7px;
+  padding: 12px;
+  background: #f7fafc;
+}
+
+.commission-highlight strong {
+  color: #082f50;
+  font-size: 20px;
+}
+
+.plan-features {
+  display: grid;
+  flex: 1;
+  gap: 10px;
+  margin: 18px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #42566c;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.plan-features svg {
+  flex: 0 0 auto;
+  color: #0a9c6b;
+}
+
+.experimental-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid #a9d8ee;
+  border-radius: 8px;
+  padding: 14px;
+  background: #eff9fd;
+  color: #075577;
+}
+
+.experimental-banner div {
+  display: grid;
+  gap: 3px;
+}
+
+.experimental-banner span {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.compact-banner {
+  margin-bottom: 16px;
+}
+
+.mock-payment-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.mock-payment-status {
+  border: 1px solid #e1e7ed;
+  border-radius: 7px;
+  padding: 12px 14px;
+  background: #f7f9fb;
+  color: #4d6074;
+}
+
+.mock-payment-status.approved { border-color: #a9dfc7; background: #effbf5; color: #087a52; }
+.mock-payment-status.declined { border-color: #f0b8b8; background: #fff3f3; color: #a72d2d; }
+.mock-payment-status.pending { border-color: #f2d08d; background: #fff9ec; color: #8a5a00; }
+
+.mock-payment-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mock-payment-actions button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid;
+  border-radius: 7px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.success-action { border-color: #0a9c6b !important; background: #0a9c6b; color: #fff; }
+.pending-action { border-color: #d69a22 !important; background: #fff7e5; color: #815600; }
+.danger-action { border-color: #d75c5c !important; background: #fff3f3; color: #a72d2d; }
+
+.financial-plan-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto;
+  align-items: center;
+  gap: 18px;
+  border: 1px solid #dce3ea;
+  border-left: 4px solid #ffad1f;
+  border-radius: 8px;
+  padding: 18px 20px;
+  background: #fff;
+}
+
+.financial-plan-strip div {
+  display: grid;
+  gap: 4px;
+}
+
+.financial-plan-strip div span {
+  color: #708196;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.financial-plan-strip div strong {
+  color: #082f50;
+  font-size: 19px;
+}
+
+.financial-history,
+.admin-monetization-section,
+.institutional-config {
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  padding: 20px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(8, 47, 80, 0.05);
+}
+
+.financial-table {
+  display: grid;
+}
+
+.financial-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.5fr) minmax(120px, 1fr) minmax(100px, .7fr) auto;
+  align-items: center;
+  gap: 16px;
+  border-top: 1px solid #e8edf2;
+  padding: 14px 4px;
+  color: #50647a;
+  font-size: 13px;
+}
+
+.financial-row:first-child { border-top: 0; }
+.financial-row > div { display: grid; gap: 3px; }
+.financial-row > div strong { color: #082f50; }
+.financial-row > div span { color: #78889a; font-size: 11px; }
+
+.transaction-status {
+  justify-self: end;
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.transaction-status.approved { background: #e7f8ef; color: #087a52; }
+.transaction-status.pending { background: #fff3d7; color: #8a5a00; }
+.transaction-status.declined { background: #ffeded; color: #a72d2d; }
+
+.admin-monetization-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.seller-request-row {
+  grid-template-columns: auto minmax(160px, 1fr) auto auto;
+}
+
+.subscription-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, .8fr) auto;
+}
+
+.subscription-row select {
+  min-width: 0;
+}
+
+.institutional-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.institutional-fields .wide-field {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .plans-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-monetization-grid { grid-template-columns: minmax(0, 1fr); }
+  .institutional-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .plans-grid,
+  .mock-payment-actions,
+  .financial-plan-strip,
+  .institutional-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .financial-plan-strip .experimental-pill {
+    justify-self: start;
+  }
+
+  .financial-row,
+  .subscription-row,
+  .seller-request-row {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+  }
+
+  .transaction-status { justify-self: start; }
+  .institutional-fields .wide-field { grid-column: auto; }
+  .seller-request-row .row-actions { justify-content: flex-start; }
+}

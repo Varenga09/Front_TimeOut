@@ -8,7 +8,9 @@ import {
   Check,
   ChefHat,
   ClipboardList,
+  CircleDollarSign,
   Copy,
+  Crown,
   CreditCard,
   Download,
   ExternalLink,
@@ -324,30 +326,12 @@ function readStoredCart(storageKey) {
   }
 }
 
-function calculatePlatformFee(totalPrice) {
-  const total = Number(totalPrice || 0)
-  const rate = total <= 10 ? 8 : total <= 50 ? 10 : 12
-  const amount = Number((Math.max(0, total) * (rate / 100)).toFixed(2))
-
-  return {
-    rate,
-    amount,
-    sellerNetAmount: Number(Math.max(0, total - amount).toFixed(2)),
-  }
-}
-
 function getOrderPlatformFee(order) {
-  const storedFee = Number(order.platformFeeAmount || 0)
-  if (storedFee > 0) return storedFee
-
-  return calculatePlatformFee(order.totalPrice).amount
+  return Number(order.commissionAmount ?? order.platformFeeAmount ?? 0)
 }
 
 function getOrderSellerNet(order) {
-  const storedNet = Number(order.sellerNetAmount || 0)
-  if (storedNet > 0) return storedNet
-
-  return Number(Math.max(0, Number(order.totalPrice || 0) - getOrderPlatformFee(order)).toFixed(2))
+  return Number(order.sellerNetRevenue ?? order.sellerNetAmount ?? 0)
 }
 
 function formatPercent(value) {
@@ -1443,6 +1427,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [paymentSettings, setPaymentSettings] = useState(null)
   const [sellerPaymentSettings, setSellerPaymentSettings] = useState(defaultPaymentSettings)
   const [environments, setEnvironments] = useState([])
+  const [plans, setPlans] = useState([])
+  const [financialOverview, setFinancialOverview] = useState(null)
+  const [adminMonetization, setAdminMonetization] = useState(null)
   const [cart, setCart] = useState(() => readStoredCart(cartStorageKey))
   const [checkoutResult, setCheckoutResult] = useState(null)
   const [cartToast, setCartToast] = useState('')
@@ -1486,6 +1473,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return () => window.removeEventListener(APP_NAVIGATION_EVENT, handleNavigation)
   }, [])
   const isSeller = user.role === 'seller' || user.role === 'admin'
+  const isApprovedSeller = user.role === 'seller'
   const isAdmin = user.role === 'admin'
 
   const loadProducts = useCallback(async () => {
@@ -1544,6 +1532,23 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     setEnvironments(response.data.data.environments)
   }, [isAdmin])
 
+  const loadPlans = useCallback(async () => {
+    const response = await api.get('/plans')
+    setPlans(response.data.data.plans)
+  }, [])
+
+  const loadFinancialOverview = useCallback(async () => {
+    if (!isApprovedSeller) return
+    const response = await api.get('/plans/me')
+    setFinancialOverview(response.data.data)
+  }, [isApprovedSeller])
+
+  const loadAdminMonetization = useCallback(async () => {
+    if (!isAdmin) return
+    const response = await api.get('/plans/admin/overview')
+    setAdminMonetization(response.data.data)
+  }, [isAdmin])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
@@ -1556,13 +1561,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         isSeller ? loadCoupons() : Promise.resolve(),
         isSeller ? loadPaymentSettings() : Promise.resolve(),
         isAdmin ? loadEnvironments() : Promise.resolve(),
+        loadPlans(),
+        isApprovedSeller ? loadFinancialOverview() : Promise.resolve(),
+        isAdmin ? loadAdminMonetization() : Promise.resolve(),
       ])
     } catch (error) {
       onNotice(getErrorMessage(error))
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, isSeller, loadCategories, loadCoupons, loadEnvironments, loadOrders, loadPaymentSettings, loadProducts, loadSellerOrders, loadUsers, onNotice])
+  }, [isAdmin, isApprovedSeller, isSeller, loadAdminMonetization, loadCategories, loadCoupons, loadEnvironments, loadFinancialOverview, loadOrders, loadPaymentSettings, loadPlans, loadProducts, loadSellerOrders, loadUsers, onNotice])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1772,6 +1780,23 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   }
 
+  async function simulatePayment(orderId, status) {
+    try {
+      const response = await api.post(`/payments/orders/${orderId}/simulate`, { status })
+      const { order, transaction } = response.data.data
+      setCheckoutResult({ order, payment: transaction })
+      const messages = {
+        approved: 'Pagamento de teste aprovado. O pedido foi liberado para o vendedor.',
+        pending: 'Pagamento de teste mantido como pendente.',
+        declined: 'Pagamento de teste recusado.',
+      }
+      onNotice(messages[status])
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
   async function cancelOrder(orderId) {
     try {
       await api.patch(`/orders/${orderId}/cancel`)
@@ -1906,8 +1931,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       const response = await api.post('/sellers/request', { cpf })
       onSessionUser(response.data.data.user)
-      onNotice('CPF validado e perfil de vendedor ativado')
-      setView('seller-products')
+      onNotice('Solicitação enviada. Um administrador precisa aprovar seu perfil de vendedor.')
+      setView('plans')
       await refresh()
     } catch (error) {
       onNotice(getErrorMessage(error))
@@ -1993,6 +2018,46 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   }
 
+  async function changeMyPlan(planCode) {
+    try {
+      await api.patch('/plans/me', { planCode })
+      onNotice('Plano experimental alterado. Nenhuma cobrança real foi feita.')
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
+  async function changeSellerPlan(userId, planCode) {
+    try {
+      await api.patch(`/plans/admin/sellers/${userId}`, { planCode })
+      onNotice('Plano experimental do vendedor atualizado')
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
+  async function reviewSellerRequest(userId, action) {
+    try {
+      await api.patch(`/sellers/${userId}/${action}`)
+      onNotice(action === 'approve' ? 'Vendedor aprovado no plano Básico' : 'Solicitação rejeitada')
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
+  async function saveInstitutionalConfig(payload) {
+    try {
+      await api.put('/plans/admin/institutional', payload)
+      onNotice('Configuração institucional salva em modo experimental')
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
   async function saveCategory(name, categoryId = null) {
     try {
       if (categoryId) {
@@ -2023,6 +2088,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     ['market', 'Vitrine', ShoppingBag],
     ['cart', `Carrinho (${cartItemsCount})`, ShoppingCart],
     ['my-orders', 'Histórico de compras', History],
+    ['plans', 'Planos', Crown],
   ]
   const sellerTabs = []
   const adminTabs = []
@@ -2034,17 +2100,19 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     sellerTabs.push(['seller-products', 'Meus produtos', Package])
     sellerTabs.push(['seller-coupons', 'Cupons', Percent])
     sellerTabs.push(['seller-payments', 'Pagamentos', CreditCard])
+    if (isApprovedSeller) sellerTabs.push(['seller-financial', 'Financeiro', CircleDollarSign])
   }
 
   if (isAdmin) {
     adminTabs.push(['admin-users', 'Usuários', UsersRound])
     adminTabs.push(['admin-environments', 'Ambientes', Building2])
     adminTabs.push(['admin-categories', 'Categorias', Tags])
+    adminTabs.push(['admin-monetization', 'Monetização', Crown])
   }
 
   const allTabs = [...primaryTabs, ...sellerTabs, ...adminTabs]
   const pageTitle = allTabs.find(([id]) => id === view)?.[1]
-    || (view === 'profile' ? 'Meu perfil' : view === 'checkout-payment' ? 'Pagamento' : 'LocalFood')
+    || (view === 'profile' ? 'Meu perfil' : view === 'checkout-payment' ? 'Pagamento' : 'TimeOut')
 
   const navigation = (
     <nav className="sidebar-nav-groups" aria-label="Navegação principal">
@@ -2151,6 +2219,17 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           result={checkoutResult}
           onOrders={() => setView('my-orders')}
           onRefresh={refresh}
+          onSimulate={simulatePayment}
+        />
+      )}
+
+      {view === 'plans' && (
+        <PlansView
+          plans={plans}
+          subscription={financialOverview?.subscription}
+          userRole={user.role}
+          onChoose={changeMyPlan}
+          onProfile={() => setView('profile')}
         />
       )}
 
@@ -2197,6 +2276,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         />
       )}
 
+      {view === 'seller-financial' && (
+        <SellerFinancialView
+          overview={financialOverview}
+          onPlans={() => setView('plans')}
+        />
+      )}
+
       {view === 'profile' && (
         <ProfileView
           user={user}
@@ -2234,6 +2320,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           activeEnvironmentId={user.environmentId}
           onSave={saveEnvironment}
           onSwitch={switchEnvironment}
+        />
+      )}
+
+      {view === 'admin-monetization' && (
+        <AdminMonetizationView
+          overview={adminMonetization}
+          plans={plans}
+          onReviewRequest={reviewSellerRequest}
+          onChangePlan={changeSellerPlan}
+          onSaveInstitutional={saveInstitutionalConfig}
         />
       )}
 
@@ -2707,7 +2803,6 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
   const selectedPaymentMethod = availablePaymentMethods.includes(form.paymentMethod)
     ? form.paymentMethod
     : availablePaymentMethods[0] || form.paymentMethod
-  const platformFeePreview = calculatePlatformFee(total)
 
   return (
     <section className="content-grid two-columns">
@@ -2771,11 +2866,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
               </button>
             ))}
           </div>
-          {onlinePaymentMethods.includes(selectedPaymentMethod) ? (
-            <p className="muted-note">O pedido só será confirmado depois da aprovação automática do pagamento.</p>
-          ) : (
-            <p className="muted-note">Pagamento combinado diretamente com o vendedor.</p>
-          )}
+          <p className="muted-note">Ambiente experimental: o próximo passo simula a resposta do pagamento, sem cobrança real.</p>
         </div>
         <label>
           Entrega ou retirada
@@ -2818,16 +2909,8 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
             <span>Subtotal</span>
             <strong>{money.format(total)}</strong>
           </div>
-          <div className="total-row muted-total-row">
-            <span>Taxa LocalFood do vendedor ({formatPercent(platformFeePreview.rate)})</span>
-            <strong>-{money.format(platformFeePreview.amount)}</strong>
-          </div>
-          <div className="total-row muted-total-row">
-            <span>Repasse estimado ao vendedor</span>
-            <strong>{money.format(platformFeePreview.sellerNetAmount)}</strong>
-          </div>
           <div className="total-row total-row-strong">
-            <span>Total do cliente</span>
+            <span>Total</span>
             <strong>{money.format(total)}</strong>
           </div>
         </div>
@@ -2844,10 +2927,12 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
   )
 }
 
-function CheckoutPaymentView({ result, onOrders, onRefresh }) {
+function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
   const payment = result.payment || {}
   const order = result.order || {}
-  const isPix = payment.method === 'pix'
+  const isMock = payment.isSimulated || order.isPaymentSimulated || order.paymentProvider === 'mock'
+  const simulatedStatus = payment.status || (order.paymentStatus === 'paid' ? 'approved' : order.paymentStatus === 'failed' ? 'declined' : 'pending')
+  const isPix = (payment.method || payment.paymentMethod) === 'pix'
   const qrImage = payment.qrCodeBase64 ? `data:image/png;base64,${payment.qrCodeBase64}` : ''
   const isConfigured = payment.failureReason !== 'MERCADO_PAGO_NOT_CONFIGURED'
 
@@ -2862,38 +2947,51 @@ function CheckoutPaymentView({ result, onOrders, onRefresh }) {
         <div className="payment-confirmation">
           <div>
             <span className="category-chip">Pedido #{order.id}</span>
-            <h2>Finalize o pagamento</h2>
+            <h2>{isMock ? 'Simular pagamento' : 'Finalize o pagamento'}</h2>
             <p>
-              O vendedor recebe o pedido com segurança depois que o gateway confirmar o valor integral.
+              {isMock
+                ? 'Escolha abaixo como o pagamento deve responder neste teste. Nenhuma cobrança real será realizada.'
+                : 'O vendedor recebe o pedido com segurança depois que o gateway confirmar o valor integral.'}
             </p>
           </div>
 
           <div className="payment-total-card">
             <span>Total da compra</span>
             <strong>{money.format(Number(order.totalPrice || payment.amount || 0))}</strong>
-            <small>{paymentLabels[order.paymentMethod] || paymentLabels[payment.method]}</small>
+            <small>{paymentLabels[order.paymentMethod] || paymentLabels[payment.method || payment.paymentMethod]}</small>
           </div>
 
-          {Number(order.platformFeeAmount || 0) > 0 ? (
-            <div className="checkout-summary compact-financial-summary">
-              <div className="total-row muted-total-row">
-                <span>Taxa LocalFood ({formatPercent(order.platformFeeRate)})</span>
-                <strong>-{money.format(Number(order.platformFeeAmount))}</strong>
+          {isMock ? (
+            <div className="mock-payment-panel">
+              <div className="experimental-banner">
+                <ShieldCheck size={19} />
+                <div>
+                  <strong>Pagamento simulado</strong>
+                  <span>Use estes controles apenas para validar o fluxo do pedido.</span>
+                </div>
               </div>
-              <div className="total-row">
-                <span>Repasse do vendedor</span>
-                <strong>{money.format(getOrderSellerNet(order))}</strong>
+              <div className={`mock-payment-status ${simulatedStatus}`}>
+                Status atual: <strong>{simulatedStatus === 'approved' ? 'Aprovado' : simulatedStatus === 'declined' ? 'Recusado' : 'Pendente'}</strong>
+              </div>
+              <div className="mock-payment-actions">
+                <button type="button" className="success-action" onClick={() => onSimulate(order.id, 'approved')}>
+                  <Check size={17} /> Aprovar
+                </button>
+                <button type="button" className="pending-action" onClick={() => onSimulate(order.id, 'pending')}>
+                  <History size={17} /> Deixar pendente
+                </button>
+                <button type="button" className="danger-action" onClick={() => onSimulate(order.id, 'declined')}>
+                  <X size={17} /> Recusar
+                </button>
               </div>
             </div>
-          ) : null}
-
-          {!isConfigured ? (
+          ) : !isConfigured ? (
             <div className="notice">
               Configure o Mercado Pago no servidor para gerar pagamentos reais.
             </div>
           ) : null}
 
-          {isPix ? (
+          {!isMock && isPix ? (
             <div className="pix-panel">
               <div className="pix-qr">
                 {qrImage ? <img src={qrImage} alt="QR Code Pix" /> : <Wallet size={48} />}
@@ -2917,7 +3015,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh }) {
                 ) : null}
               </div>
             </div>
-          ) : (
+          ) : !isMock ? (
             <div className="pix-panel">
               <div className="pix-qr">
                 <CreditCard size={48} />
@@ -2925,7 +3023,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh }) {
               <div>
                 <h3>Checkout seguro</h3>
                 <p>
-                  O cartão é processado pelo ambiente seguro do gateway. O LocalFood não armazena dados de cartão.
+                  O cartão é processado pelo ambiente seguro do gateway. O TimeOut não armazena dados de cartão.
                 </p>
                 {payment.checkoutUrl ? (
                   <a className="primary-button compact-button external-link-button" href={payment.checkoutUrl} target="_blank" rel="noreferrer">
@@ -2935,16 +3033,16 @@ function CheckoutPaymentView({ result, onOrders, onRefresh }) {
                 ) : null}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
       <aside className="side-panel">
-        <PanelHeader icon={ShieldCheck} title="Confirmação automática" />
+        <PanelHeader icon={ShieldCheck} title={isMock ? 'Ambiente de teste' : 'Confirmação automática'} />
         <div className="info-list">
-          <span><BadgeCheck size={16} /> Webhook confirma pagamento aprovado</span>
-          <span><Wallet size={16} /> Valor parcial não libera o pedido</span>
-          <span><ClipboardList size={16} /> Transação registrada para auditoria</span>
+          <span><BadgeCheck size={16} /> {isMock ? 'Nenhum valor será cobrado' : 'Webhook confirma pagamento aprovado'}</span>
+          <span><Wallet size={16} /> O vendedor só avança após aprovação</span>
+          <span><ClipboardList size={16} /> Resultado registrado para auditoria</span>
         </div>
         <button className="primary-button" type="button" onClick={onRefresh}>
           <RefreshCcw size={18} />
@@ -2995,21 +3093,17 @@ function PaymentSettingsView({ settings, onSave }) {
       </div>
 
       <aside className="side-panel">
-        <PanelHeader icon={CreditCard} title="Gateway" />
+        <PanelHeader icon={CreditCard} title="Modo experimental" />
+        <div className="experimental-banner compact-banner">
+          <ShieldCheck size={18} />
+          <div>
+            <strong>Pagamentos simulados</strong>
+            <span>Estas opções definem o que aparece no checkout, sem movimentar dinheiro.</span>
+          </div>
+        </div>
         <label>
-          Provedor
-          <select value={form.provider} onChange={(event) => updateField('provider', event.target.value)}>
-            <option value="mercado_pago">Mercado Pago</option>
-            <option value="manual">Manual</option>
-          </select>
-        </label>
-        <label>
-          ID da conta do vendedor
-          <input
-            value={form.providerAccountId || ''}
-            onChange={(event) => updateField('providerAccountId', event.target.value)}
-            placeholder="Opcional nesta versão"
-          />
+          Identificação de teste
+          <input value="Simulador interno TimeOut" disabled />
         </label>
         <label className="checkbox-line">
           <input
@@ -3020,7 +3114,7 @@ function PaymentSettingsView({ settings, onSave }) {
           Pagamentos ativos
         </label>
         <p className="muted-note">
-          Para Pix e cartões reais, configure o access token do Mercado Pago no backend.
+          A integração com pagamento real permanece desativada nesta fase de validação.
         </p>
         <button className="primary-button" type="button" onClick={() => onSave(form)}>
           <Check size={18} />
@@ -3034,7 +3128,7 @@ function PaymentSettingsView({ settings, onSave }) {
 function SalesDashboard({ orders, products }) {
   const [activeDayIndex, setActiveDayIndex] = useState(6)
   const deliveredOrders = orders.filter((order) => order.status === 'delivered')
-  const grossTotal = deliveredOrders.reduce((sum, order) => sum + Number(order.totalPrice), 0)
+  const grossTotal = deliveredOrders.reduce((sum, order) => sum + Number(order.grossSalesAmount || order.totalPrice), 0)
   const platformFeeTotal = deliveredOrders.reduce((sum, order) => sum + getOrderPlatformFee(order), 0)
   const sellerNetTotal = deliveredOrders.reduce((sum, order) => sum + getOrderSellerNet(order), 0)
   const pendingOrders = orders.filter((order) => ['pending', 'accepted', 'preparing', 'ready'].includes(order.status)).length
@@ -3119,7 +3213,7 @@ function SalesDashboard({ orders, products }) {
             <strong>{money.format(grossTotal)}</strong>
           </article>
           <article className="metric-card">
-            <span>Taxa LocalFood</span>
+            <span>Comissões TimeOut</span>
             <strong>{money.format(platformFeeTotal)}</strong>
           </article>
           <article className="metric-card">
@@ -3277,13 +3371,22 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
               <span><Phone size={15} /> {mode === 'seller' ? order.customer.phone : order.seller.phone}</span>
               <span><Wallet size={15} /> {paymentLabels[order.paymentMethod]}</span>
               <span><CreditCard size={15} /> {paymentStatusLabels[order.paymentStatus] || 'Pagamento pendente'}</span>
+              {order.isPaymentSimulated || order.paymentProvider === 'mock' ? (
+                <span><ShieldCheck size={15} /> Pagamento simulado</span>
+              ) : null}
               {Number(order.couponDiscount || 0) > 0 ? (
                 <span><Percent size={15} /> Cupom {order.couponCode}: -{money.format(Number(order.couponDiscount))}</span>
               ) : null}
               {mode === 'seller' ? (
                 <>
-                  <span><Percent size={15} /> Taxa LocalFood ({formatPercent(order.platformFeeRate)}): -{money.format(getOrderPlatformFee(order))}</span>
-                  <span><Wallet size={15} /> Repasse do vendedor: {money.format(getOrderSellerNet(order))}</span>
+                  <span>
+                    <Percent size={15} /> Comissão TimeOut ({formatPercent(order.commissionRate ?? order.platformFeeRate)}):{' '}
+                    {order.status === 'delivered' ? `-${money.format(getOrderPlatformFee(order))}` : 'confirmada na entrega'}
+                  </span>
+                  <span>
+                    <Wallet size={15} /> Receita líquida:{' '}
+                    {order.status === 'delivered' ? money.format(getOrderSellerNet(order)) : 'aguardando entrega'}
+                  </span>
                 </>
               ) : null}
               <span><MapPin size={15} /> {order.deliveryLocation || deliveryLabels[order.deliveryType]}</span>
@@ -3310,7 +3413,7 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
             ) : null}
 
             {mode === 'seller' &&
-            onlinePaymentMethods.includes(order.paymentMethod) &&
+            (order.paymentProvider === 'mock' || onlinePaymentMethods.includes(order.paymentMethod)) &&
             order.paymentStatus !== 'paid' &&
             !['canceled', 'refused'].includes(order.status) ? (
               <p className="muted-note">Aguarde a confirmação automática do pagamento para avançar este pedido.</p>
@@ -3318,7 +3421,7 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
 
             {mode === 'seller' &&
             !['delivered', 'canceled', 'refused'].includes(order.status) &&
-            (!onlinePaymentMethods.includes(order.paymentMethod) || order.paymentStatus === 'paid') ? (
+            (!(order.paymentProvider === 'mock' || onlinePaymentMethods.includes(order.paymentMethod)) || order.paymentStatus === 'paid') ? (
               <div className="status-actions">
                 {sellerStatusOptions.map((status) => (
                   <button key={status} type="button" onClick={() => onStatus(order.id, status)}>
@@ -3936,6 +4039,224 @@ function CouponManagerView({ coupons, onSave, onToggle, onDelete }) {
   )
 }
 
+function getPlanFeatures(plan) {
+  if (Array.isArray(plan?.features)) return plan.features
+  try {
+    const parsed = JSON.parse(plan?.features || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function PlansView({ plans, subscription, userRole, onChoose, onProfile }) {
+  const activeCode = subscription?.plan?.code
+  const canChoose = userRole === 'seller'
+
+  return (
+    <section className="main-column full monetization-page">
+      <div className="section-heading plans-heading">
+        <div>
+          <span className="eyebrow">Modelo comercial experimental</span>
+          <h2>Planos para vender no TimeOut</h2>
+          <p className="section-subtitle">Compare mensalidade e comissão. Nenhuma cobrança real é feita nesta fase.</p>
+        </div>
+        <span className="experimental-pill"><ShieldCheck size={15} /> Ambiente de teste</span>
+      </div>
+
+      <div className="plans-grid">
+        {plans.map((plan) => {
+          const isActive = plan.code === activeCode
+          const isInstitutional = plan.code === 'institutional'
+
+          return (
+            <article className={`plan-card ${plan.code === 'pro' ? 'featured' : ''}`} key={plan.id}>
+              <div className="plan-card-header">
+                <div className="plan-icon">{plan.code === 'pro' ? <Crown size={22} /> : plan.code === 'institutional' ? <Building2 size={22} /> : <Store size={22} />}</div>
+                {isActive ? <span className="active-plan-badge"><Check size={14} /> Plano atual</span> : null}
+              </div>
+              <h3>{plan.name}</h3>
+              <p>{plan.description}</p>
+              <div className="plan-price">
+                <strong>{money.format(Number(plan.monthlyPrice))}</strong>
+                <span>/mês</span>
+              </div>
+              <div className="commission-highlight">
+                <span>Comissão por venda entregue</span>
+                <strong>{formatPercent(plan.commissionRate)}</strong>
+              </div>
+              <ul className="plan-features">
+                {getPlanFeatures(plan).map((feature) => (
+                  <li key={feature}><Check size={15} /> {feature}</li>
+                ))}
+              </ul>
+              {isInstitutional ? (
+                <button className="ghost-button wide" type="button" disabled>Configurado pelo administrador</button>
+              ) : canChoose ? (
+                <button className={isActive ? 'ghost-button wide' : 'primary-button wide'} type="button" onClick={() => onChoose(plan.code)} disabled={isActive}>
+                  {isActive ? 'Plano ativo' : `Testar plano ${plan.name}`}
+                </button>
+              ) : (
+                <button className="primary-button wide" type="button" onClick={onProfile}>Solicitar perfil de vendedor</button>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function SellerFinancialView({ overview, onPlans }) {
+  if (!overview) return <EmptyState text="Carregando dados financeiros..." />
+
+  const { subscription, summary, transactions = [] } = overview
+  const plan = subscription?.plan
+
+  return (
+    <section className="main-column full monetization-page">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Financeiro experimental</span>
+          <h2>Receita e comissões</h2>
+          <p className="section-subtitle">Os valores só são confirmados quando o pedido é marcado como entregue.</p>
+        </div>
+        <button className="ghost-button" type="button" onClick={onPlans}><Crown size={16} /> Ver planos</button>
+      </div>
+
+      <div className="financial-plan-strip">
+        <div>
+          <span>Plano atual</span>
+          <strong>{plan?.name || 'Básico'}</strong>
+        </div>
+        <div>
+          <span>Mensalidade simulada</span>
+          <strong>{money.format(Number(subscription?.monthlyPrice || 0))}</strong>
+        </div>
+        <div>
+          <span>Comissão</span>
+          <strong>{formatPercent(subscription?.commissionRate)}</strong>
+        </div>
+        <span className="experimental-pill"><ShieldCheck size={15} /> Sem cobrança real</span>
+      </div>
+
+      <div className="metrics-grid financial-metrics">
+        <article className="metric-card"><span>Vendas entregues</span><strong>{summary.deliveredOrders}</strong></article>
+        <article className="metric-card"><span>Faturamento bruto</span><strong>{money.format(summary.grossRevenue)}</strong></article>
+        <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(summary.commissions)}</strong></article>
+        <article className="metric-card"><span>Receita líquida</span><strong>{money.format(summary.netRevenue)}</strong></article>
+      </div>
+
+      <div className="financial-history">
+        <div className="section-heading compact-heading">
+          <h3>Histórico de pagamentos simulados</h3>
+          <span>{transactions.length} registros</span>
+        </div>
+        <div className="financial-table" role="table">
+          {transactions.map((transaction) => (
+            <div className="financial-row" role="row" key={transaction.id}>
+              <div><strong>Pedido #{transaction.orderId}</strong><span>{formatDate(transaction.simulatedAt || transaction.createdAt)}</span></div>
+              <span>{paymentLabels[transaction.paymentMethod] || transaction.paymentMethod}</span>
+              <strong>{money.format(Number(transaction.amount))}</strong>
+              <span className={`transaction-status ${transaction.status}`}>
+                {transaction.status === 'approved' ? 'Aprovado' : transaction.status === 'declined' ? 'Recusado' : 'Pendente'}
+              </span>
+            </div>
+          ))}
+        </div>
+        {transactions.length === 0 ? <EmptyState text="Nenhum pagamento simulado registrado ainda." /> : null}
+      </div>
+    </section>
+  )
+}
+
+function AdminMonetizationView({ overview, plans, onReviewRequest, onChangePlan, onSaveInstitutional }) {
+  const initialConfig = overview?.environment?.institutionalPlanConfig || {}
+  const [institutional, setInstitutional] = useState({
+    displayName: initialConfig.displayName || '',
+    imageUrl: initialConfig.imageUrl || '',
+    monthlyPrice: initialConfig.monthlyPrice ?? 99,
+    commissionRate: initialConfig.commissionRate ?? 0,
+    notes: initialConfig.notes || '',
+  })
+
+  if (!overview) return <EmptyState text="Carregando administração financeira..." />
+
+  const pendingRequests = overview.requests?.filter((request) => request.status === 'pending') || []
+  const selectablePlans = plans.filter((plan) => ['basic', 'pro'].includes(plan.code))
+
+  return (
+    <section className="main-column full monetization-page">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Administração</span>
+          <h2>Monetização do ambiente</h2>
+          <p className="section-subtitle">Aprove vendedores, acompanhe comissões e gerencie os planos de teste.</p>
+        </div>
+        <span className="experimental-pill"><ShieldCheck size={15} /> Pagamentos simulados</span>
+      </div>
+
+      <div className="metrics-grid admin-financial-metrics">
+        <article className="metric-card"><span>Vendedores ativos</span><strong>{overview.subscriptions?.length || 0}</strong></article>
+        <article className="metric-card"><span>Solicitações pendentes</span><strong>{pendingRequests.length}</strong></article>
+        <article className="metric-card"><span>Vendas entregues</span><strong>{overview.summary.deliveredOrders}</strong></article>
+        <article className="metric-card"><span>Comissões confirmadas</span><strong>{money.format(overview.summary.commissions)}</strong></article>
+      </div>
+
+      <div className="admin-monetization-grid">
+        <div className="admin-monetization-section">
+          <div className="section-heading compact-heading"><h3>Solicitações de vendedor</h3><span>{pendingRequests.length} pendentes</span></div>
+          <div className="stack">
+            {pendingRequests.map((request) => (
+              <article className="line-card seller-request-row" key={request.id}>
+                <div className="product-thumb avatar-thumb"><UserRound size={18} /></div>
+                <div><h3>{request.user?.name}</h3><p>{request.user?.email}</p><span>{request.user?.phone || 'Telefone não informado'}</span></div>
+                <span className="status-badge pending">Aguardando análise</span>
+                <div className="row-actions">
+                  <button className="primary-button compact-button" type="button" onClick={() => onReviewRequest(request.userId, 'approve')}><Check size={16} /> Aprovar</button>
+                  <button className="ghost-button danger-text" type="button" onClick={() => onReviewRequest(request.userId, 'reject')}><X size={16} /> Rejeitar</button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {pendingRequests.length === 0 ? <EmptyState text="Nenhuma solicitação pendente." /> : null}
+        </div>
+
+        <div className="admin-monetization-section">
+          <div className="section-heading compact-heading"><h3>Planos dos vendedores</h3><span>{overview.subscriptions?.length || 0} ativos</span></div>
+          <div className="financial-table">
+            {overview.subscriptions?.map((subscription) => (
+              <div className="financial-row subscription-row" key={subscription.id}>
+                <div><strong>{subscription.seller?.name}</strong><span>{subscription.seller?.email}</span></div>
+                <select value={subscription.plan?.code || 'basic'} onChange={(event) => onChangePlan(subscription.userId, event.target.value)}>
+                  {selectablePlans.map((plan) => <option key={plan.code} value={plan.code}>{plan.name} - {formatPercent(plan.commissionRate)}</option>)}
+                </select>
+                <span className="experimental-pill">Simulado</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <form className="institutional-config" onSubmit={(event) => { event.preventDefault(); onSaveInstitutional({
+        ...institutional,
+        monthlyPrice: institutional.monthlyPrice === '' ? null : Number(institutional.monthlyPrice),
+        commissionRate: institutional.commissionRate === '' ? null : Number(institutional.commissionRate),
+      }) }}>
+        <div className="section-heading compact-heading"><div><h3>Plano institucional</h3><p className="section-subtitle">Personalização local, ainda sem contrato ou cobrança.</p></div></div>
+        <div className="institutional-fields">
+          <label>Nome de exibição<input value={institutional.displayName} onChange={(event) => setInstitutional({ ...institutional, displayName: event.target.value })} placeholder="Ex: TimeOut SENAI" /></label>
+          <label>Imagem institucional<input type="url" value={institutional.imageUrl} onChange={(event) => setInstitutional({ ...institutional, imageUrl: event.target.value })} placeholder="https://..." /></label>
+          <label>Mensalidade simulada<input type="number" min="0" step="0.01" value={institutional.monthlyPrice} onChange={(event) => setInstitutional({ ...institutional, monthlyPrice: event.target.value })} /></label>
+          <label>Comissão<input type="number" min="0" max="100" step="0.01" value={institutional.commissionRate} onChange={(event) => setInstitutional({ ...institutional, commissionRate: event.target.value })} /></label>
+          <label className="wide-field">Observações<textarea value={institutional.notes} onChange={(event) => setInstitutional({ ...institutional, notes: event.target.value })} placeholder="Condições e observações internas" /></label>
+        </div>
+        <button className="primary-button" type="submit"><Check size={17} /> Salvar configuração</button>
+      </form>
+    </section>
+  )
+}
+
 function ProfileView({
   user,
   onSave,
@@ -4049,7 +4370,7 @@ function ProfileView({
             </div>
             <div>
               <h3>Começar a vender</h3>
-              <p>Informe um CPF matematicamente válido e de sua titularidade para cadastrar produtos.</p>
+              <p>Informe um CPF válido para enviar sua solicitação. Um administrador do ambiente fará a aprovação.</p>
               <label>
                 CPF
                 <input
@@ -4066,7 +4387,7 @@ function ProfileView({
                 disabled={!user.emailVerifiedAt && !user.phoneVerifiedAt}
               >
                 <UserCheck size={17} />
-                Validar CPF e ativar vendedor
+                Enviar solicitação de vendedor
               </button>
             </div>
           </article>
@@ -4340,17 +4661,12 @@ function AdminUsersView({ users, currentUserId, filters, onFilter, onRole, onDel
             </div>
             <span className={`role-badge ${item.role}`}>{roleLabel(item.role)}</span>
             <div className="row-actions">
-              {item.role !== 'seller' ? (
-                <button className="ghost-button" type="button" onClick={() => onRole(item, 'seller')}>
-                  <UserCheck size={16} />
-                  Vendedor
-                </button>
-              ) : (
+              {item.role === 'seller' ? (
                 <button className="ghost-button" type="button" onClick={() => onRole(item, 'customer')}>
                   <Ban size={16} />
                   Bloquear venda
                 </button>
-              )}
+              ) : null}
               {item.role !== 'admin' ? (
                 <button className="ghost-button" type="button" onClick={() => onRole(item, 'admin')}>
                   <ShieldCheck size={16} />

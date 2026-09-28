@@ -16,6 +16,10 @@ Frontend web do LocalFood, uma plataforma de pedidos locais para escolas, empres
 - Atualizacao de status do pedido pelo vendedor.
 - Cadastro, edicao, imagem, ativacao/pausa e remocao de produtos do vendedor.
 - Painel admin para gerenciar usuarios, vendedores e categorias.
+- Solicitacao de vendedor com aprovacao administrativa.
+- Comparacao dos planos Basico, Pro e Institucional.
+- Painel financeiro do vendedor com faturamento, comissoes e receita liquida.
+- Central administrativa de monetizacao e pagamentos simulados.
 
 ## Tecnologias
 
@@ -97,13 +101,13 @@ SENAI2026
 1. Entre como cliente.
 2. Veja a vitrine de produtos.
 3. Adicione Coxinha e Suco ao carrinho.
-4. Envie o pedido escolhendo Pix e ponto de encontro.
-5. Saia e entre como vendedor.
-6. Abra "Pedidos recebidos".
+4. Envie o pedido e escolha o resultado simulado do pagamento.
+5. Entre como admin e aprove uma solicitacao de vendedor em "Monetizacao".
+6. Entre como vendedor e abra "Pedidos recebidos".
 7. Atualize o pedido para aceito, preparando, pronto e entregue.
-8. Abra "Meus produtos" para criar ou pausar produtos.
-9. Use "Perfil" para alterar telefone, foto, nome ou senha.
-10. Entre como admin para abrir "Usuarios" e "Categorias".
+8. Confira a comissao confirmada na pagina "Financeiro".
+9. Compare os planos e teste a troca entre Basico e Pro.
+10. Use o painel administrativo para conferir vendedores, planos e comissoes.
 
 ## Scripts
 
@@ -127,6 +131,7 @@ src/
 
 ## Observacoes
 
-- O pagamento ainda e combinado fora do aplicativo.
+- Todos os pagamentos desta fase sao simulados e nao movimentam dinheiro real.
+- As mensalidades dos planos tambem sao simuladas.
 - O vendedor e o cliente precisam estar no mesmo ambiente.
 - O backend continua responsavel pelas regras importantes, como estoque, permissao e seguranca.
