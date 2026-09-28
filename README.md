@@ -131,7 +131,7 @@ src/
 
 ## Observacoes
 
-- Todos os pagamentos desta fase sao simulados e nao movimentam dinheiro real.
+- Todos os pagamentos desta fase sao simulados, aprovados automaticamente e nao movimentam dinheiro real.
 - As mensalidades dos planos tambem sao simuladas.
 - O vendedor e o cliente precisam estar no mesmo ambiente.
 - O backend continua responsavel pelas regras importantes, como estoque, permissao e seguranca.

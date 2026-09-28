@@ -1771,9 +1771,14 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
       const { order, payment } = response.data.data
       setCart([])
-      setCheckoutResult(payment ? { order, payment } : null)
-      setView(payment ? 'checkout-payment' : 'my-orders')
-      onNotice(payment ? 'Pedido criado. Finalize o pagamento para confirmar.' : 'Pedido enviado para o vendedor')
+      const wasAutoApproved = payment?.isSimulated && payment.status === 'approved'
+      setCheckoutResult(payment && !wasAutoApproved ? { order, payment } : null)
+      setView(payment && !wasAutoApproved ? 'checkout-payment' : 'my-orders')
+      onNotice(wasAutoApproved
+        ? 'Pedido criado e pagamento de teste aprovado automaticamente.'
+        : payment
+          ? 'Pedido criado. Finalize o pagamento para confirmar.'
+          : 'Pedido enviado para o vendedor')
       await refresh()
     } catch (error) {
       onNotice(getErrorMessage(error))
@@ -2866,7 +2871,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
               </button>
             ))}
           </div>
-          <p className="muted-note">Ambiente experimental: o próximo passo simula a resposta do pagamento, sem cobrança real.</p>
+          <p className="muted-note">Ambiente experimental: o pagamento será aprovado automaticamente, sem cobrança real.</p>
         </div>
         <label>
           Entrega ou retirada
@@ -3413,7 +3418,8 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
             ) : null}
 
             {mode === 'seller' &&
-            (order.paymentProvider === 'mock' || onlinePaymentMethods.includes(order.paymentMethod)) &&
+            order.paymentProvider !== 'mock' &&
+            onlinePaymentMethods.includes(order.paymentMethod) &&
             order.paymentStatus !== 'paid' &&
             !['canceled', 'refused'].includes(order.status) ? (
               <p className="muted-note">Aguarde a confirmação automática do pagamento para avançar este pedido.</p>
@@ -3421,7 +3427,7 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
 
             {mode === 'seller' &&
             !['delivered', 'canceled', 'refused'].includes(order.status) &&
-            (!(order.paymentProvider === 'mock' || onlinePaymentMethods.includes(order.paymentMethod)) || order.paymentStatus === 'paid') ? (
+            (order.paymentProvider === 'mock' || !onlinePaymentMethods.includes(order.paymentMethod) || order.paymentStatus === 'paid') ? (
               <div className="status-actions">
                 {sellerStatusOptions.map((status) => (
                   <button key={status} type="button" onClick={() => onStatus(order.id, status)}>
