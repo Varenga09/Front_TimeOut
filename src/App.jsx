@@ -111,7 +111,21 @@ const paymentStatusLabels = {
   awaiting_payment: 'Aguardando pagamento',
   paid: 'Pagamento aprovado',
   failed: 'Pagamento recusado',
+  pending: 'Aguardando simulação',
+  approved: 'Pagamento aprovado',
+  held: 'Valor reservado pelo TimeOut',
+  settled: 'Pagamento liquidado',
+  declined: 'Pagamento recusado',
   refunded: 'Pagamento estornado',
+}
+
+const transactionStatusLabels = {
+  pending: 'Pendente',
+  approved: 'Aprovado',
+  held: 'Reservado',
+  settled: 'Liquidado',
+  declined: 'Recusado',
+  refunded: 'Reembolsado',
 }
 
 const onlinePaymentMethods = ['pix', 'credit_card', 'debit_card']
@@ -1462,6 +1476,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [plans, setPlans] = useState([])
   const [financialOverview, setFinancialOverview] = useState(null)
   const [adminMonetization, setAdminMonetization] = useState(null)
+  const [adminPayoutOverview, setAdminPayoutOverview] = useState(null)
+  const [platformPayoutOverview, setPlatformPayoutOverview] = useState(null)
   const [accessData, setAccessData] = useState({ sellerApplications: [], environmentApplications: [] })
   const [environmentAccess, setEnvironmentAccess] = useState(null)
   const [platformAccess, setPlatformAccess] = useState(null)
@@ -1577,7 +1593,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   const loadFinancialOverview = useCallback(async () => {
     if (!isApprovedSeller) return
-    const response = await api.get('/plans/me')
+    const response = await api.get('/payments/payout-account')
     setFinancialOverview(response.data.data)
   }, [isApprovedSeller])
 
@@ -1586,6 +1602,18 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     const response = await api.get('/plans/admin/overview')
     setAdminMonetization(response.data.data)
   }, [isAdmin])
+
+  const loadAdminPayoutOverview = useCallback(async () => {
+    if (!isAdmin) return
+    const response = await api.get('/payments/admin/overview')
+    setAdminPayoutOverview(response.data.data)
+  }, [isAdmin])
+
+  const loadPlatformPayoutOverview = useCallback(async () => {
+    if (!isPlatformAdmin) return
+    const response = await api.get('/payments/platform/overview')
+    setPlatformPayoutOverview(response.data.data)
+  }, [isPlatformAdmin])
 
   const loadAccessData = useCallback(async () => {
     const [applicationsResponse, notificationsResponse] = await Promise.all([
@@ -1609,7 +1637,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     setLoading(true)
     try {
       if (isPlatformAdmin || !user.environmentId) {
-        await loadAccessData()
+        await Promise.all([
+          loadAccessData(),
+          isPlatformAdmin ? loadPlatformPayoutOverview() : Promise.resolve(),
+        ])
         return
       }
       await Promise.all([
@@ -1624,6 +1655,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         loadPlans(),
         isApprovedSeller ? loadFinancialOverview() : Promise.resolve(),
         isAdmin ? loadAdminMonetization() : Promise.resolve(),
+        isAdmin ? loadAdminPayoutOverview() : Promise.resolve(),
         loadAccessData(),
       ])
     } catch (error) {
@@ -1631,7 +1663,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, isApprovedSeller, isPlatformAdmin, isSeller, loadAccessData, loadAdminMonetization, loadCategories, loadCoupons, loadEnvironments, loadFinancialOverview, loadOrders, loadPaymentSettings, loadPlans, loadProducts, loadSellerOrders, loadUsers, onNotice, user.environmentId])
+  }, [isAdmin, isApprovedSeller, isPlatformAdmin, isSeller, loadAccessData, loadAdminMonetization, loadAdminPayoutOverview, loadCategories, loadCoupons, loadEnvironments, loadFinancialOverview, loadOrders, loadPaymentSettings, loadPlans, loadPlatformPayoutOverview, loadProducts, loadSellerOrders, loadUsers, onNotice, user.environmentId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1832,14 +1864,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
       const { order, payment } = response.data.data
       setCart([])
-      const wasAutoApproved = payment?.isSimulated && payment.status === 'approved'
-      setCheckoutResult(payment && !wasAutoApproved ? { order, payment } : null)
-      setView(payment && !wasAutoApproved ? 'checkout-payment' : 'my-orders')
-      onNotice(wasAutoApproved
-        ? 'Pedido criado e pagamento de teste aprovado automaticamente.'
-        : payment
-          ? 'Pedido criado. Finalize o pagamento para confirmar.'
-          : 'Pedido enviado para o vendedor')
+      setCheckoutResult(payment ? { order, payment } : null)
+      setView(payment ? 'checkout-payment' : 'my-orders')
+      onNotice(payment
+        ? 'Pedido criado. Escolha o resultado da simulação do pagamento.'
+        : 'Pedido enviado para o vendedor')
       await refresh()
     } catch (error) {
       onNotice(getErrorMessage(error))
@@ -1852,7 +1881,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       const { order, transaction } = response.data.data
       setCheckoutResult({ order, payment: transaction })
       const messages = {
-        approved: 'Pagamento de teste aprovado. O pedido foi liberado para o vendedor.',
+        approved: 'Pagamento de teste aprovado e reservado pelo TimeOut até a entrega.',
         pending: 'Pagamento de teste mantido como pendente.',
         declined: 'Pagamento de teste recusado.',
       }
@@ -1964,6 +1993,28 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       const response = await api.put('/payments/settings', payload)
       setPaymentSettings(response.data.data.settings)
       onNotice('Formas de pagamento atualizadas')
+      await refresh()
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    }
+  }
+
+  async function connectPayoutAccount(payload) {
+    try {
+      await api.post('/payments/payout-account/connect', payload)
+      onNotice('Conta de teste conectada. Nenhuma conta bancária real foi vinculada.')
+      await refresh()
+      return true
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+      return false
+    }
+  }
+
+  async function updatePayoutAccountStatus(sellerId, suspended) {
+    try {
+      await api.patch(`/payments/admin/accounts/${sellerId}/status`, { suspended })
+      onNotice(suspended ? 'Conta de recebimento suspensa' : 'Conta de recebimento reativada')
       await refresh()
     } catch (error) {
       onNotice(getErrorMessage(error))
@@ -2214,7 +2265,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     sellerTabs.push(['sales-history', 'Histórico de vendas', ClipboardList])
     sellerTabs.push(['seller-products', 'Meus produtos', Package])
     sellerTabs.push(['seller-coupons', 'Cupons', Percent])
-    sellerTabs.push(['seller-payments', 'Pagamentos', CreditCard])
+    sellerTabs.push(['seller-payments', 'Recebimentos', Wallet])
     if (isApprovedSeller) sellerTabs.push(['seller-financial', 'Financeiro', CircleDollarSign])
   }
 
@@ -2404,7 +2455,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         <PaymentSettingsView
           key={paymentSettings?.updatedAt || paymentSettings?.id || 'payment-settings-default'}
           settings={paymentSettings || defaultPaymentSettings}
+          overview={financialOverview}
           onSave={savePaymentSettings}
+          onConnect={connectPayoutAccount}
         />
       )}
 
@@ -2454,10 +2507,12 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       {view === 'admin-monetization' && (
         <AdminMonetizationView
           overview={adminMonetization}
+          payoutOverview={adminPayoutOverview}
           plans={plans}
           onReviewRequest={reviewSellerRequest}
           onChangePlan={changeSellerPlan}
           onSaveInstitutional={saveInstitutionalConfig}
+          onPayoutStatus={updatePayoutAccountStatus}
         />
       )}
 
@@ -2475,6 +2530,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       {view === 'platform-access' && (
         <PlatformAccessView
           data={platformAccess}
+          payoutOverview={platformPayoutOverview}
           onReviewApplication={reviewEnvironmentApplication}
           onToggleEnvironment={toggleEnvironmentStatus}
           onTransferEnvironment={transferEnvironment}
@@ -3017,7 +3073,13 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
               </button>
             ))}
           </div>
-          <p className="muted-note">Ambiente experimental: o pagamento será aprovado automaticamente, sem cobrança real.</p>
+          <div className="experimental-banner compact-banner checkout-intermediation">
+            <ShieldCheck size={18} />
+            <div>
+              <strong>Pagamento intermediado pelo TimeOut</strong>
+              <span>Ambiente de teste: nenhum valor real será movimentado.</span>
+            </div>
+          </div>
         </div>
         <label>
           Entrega ou retirada
@@ -3082,7 +3144,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
   const payment = result.payment || {}
   const order = result.order || {}
   const isMock = payment.isSimulated || order.isPaymentSimulated || order.paymentProvider === 'mock'
-  const simulatedStatus = payment.status || (order.paymentStatus === 'paid' ? 'approved' : order.paymentStatus === 'failed' ? 'declined' : 'pending')
+  const simulatedStatus = payment.status || order.paymentStatus || 'pending'
   const isPix = (payment.method || payment.paymentMethod) === 'pix'
   const qrImage = payment.qrCodeBase64 ? `data:image/png;base64,${payment.qrCodeBase64}` : ''
   const isConfigured = payment.failureReason !== 'MERCADO_PAGO_NOT_CONFIGURED'
@@ -3117,22 +3179,22 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
               <div className="experimental-banner">
                 <ShieldCheck size={19} />
                 <div>
-                  <strong>Pagamento simulado</strong>
-                  <span>Use estes controles apenas para validar o fluxo do pedido.</span>
+                  <strong>Pagamento intermediado pelo TimeOut</strong>
+                  <span>Simulação sem Pix real, dados bancários ou movimentação de dinheiro.</span>
                 </div>
               </div>
               <div className={`mock-payment-status ${simulatedStatus}`}>
-                Status atual: <strong>{simulatedStatus === 'approved' ? 'Aprovado' : simulatedStatus === 'declined' ? 'Recusado' : 'Pendente'}</strong>
+                Status atual: <strong>{transactionStatusLabels[simulatedStatus] || 'Pendente'}</strong>
               </div>
               <div className="mock-payment-actions">
                 <button type="button" className="success-action" onClick={() => onSimulate(order.id, 'approved')}>
-                  <Check size={17} /> Aprovar
+                  <Check size={17} /> Simular pagamento aprovado
                 </button>
                 <button type="button" className="pending-action" onClick={() => onSimulate(order.id, 'pending')}>
-                  <History size={17} /> Deixar pendente
+                  <History size={17} /> Simular pagamento pendente
                 </button>
                 <button type="button" className="danger-action" onClick={() => onSimulate(order.id, 'declined')}>
-                  <X size={17} /> Recusar
+                  <X size={17} /> Simular pagamento recusado
                 </button>
               </div>
             </div>
@@ -3192,7 +3254,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
         <PanelHeader icon={ShieldCheck} title={isMock ? 'Ambiente de teste' : 'Confirmação automática'} />
         <div className="info-list">
           <span><BadgeCheck size={16} /> {isMock ? 'Nenhum valor será cobrado' : 'Webhook confirma pagamento aprovado'}</span>
-          <span><Wallet size={16} /> O vendedor só avança após aprovação</span>
+          <span><Wallet size={16} /> O valor fica reservado até a entrega</span>
           <span><ClipboardList size={16} /> Resultado registrado para auditoria</span>
         </div>
         <button className="primary-button" type="button" onClick={onRefresh}>
@@ -3207,71 +3269,115 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
   )
 }
 
-function PaymentSettingsView({ settings, onSave }) {
+function PaymentSettingsView({ settings, overview, onSave, onConnect }) {
   const [form, setForm] = useState(() => ({ ...defaultPaymentSettings, ...settings }))
+  const [accountForm, setAccountForm] = useState({
+    responsibleName: '',
+    storeName: '',
+    acceptedTestTerms: false,
+  })
+  const [connecting, setConnecting] = useState(false)
+  const account = overview?.account || { status: 'not_connected' }
+  const summary = overview?.summary || {}
+  const transactions = overview?.transactions || []
+  const connected = account.status === 'connected'
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
   }
 
-  return (
-    <section className="content-grid two-columns">
-      <div className="main-column">
-        <div className="section-heading">
-          <h2>Formas de pagamento</h2>
-          <span>configuração do vendedor</span>
-        </div>
+  async function connectAccount(event) {
+    event.preventDefault()
+    setConnecting(true)
+    const success = await onConnect(accountForm)
+    setConnecting(false)
+    if (success) setAccountForm((current) => ({ ...current, acceptedTestTerms: false }))
+  }
 
-        <div className="payment-settings-grid">
-          {Object.entries(paymentMethodSettingFields).map(([method, field]) => (
-            <label className="payment-toggle-card" key={method}>
-              <input
-                type="checkbox"
-                checked={Boolean(form[field])}
-                onChange={(event) => updateField(field, event.target.checked)}
-              />
-              <span>
-                <strong>{paymentLabels[method]}</strong>
-                <small>
-                  {onlinePaymentMethods.includes(method)
-                    ? 'Pagamento online com confirmação automática'
-                    : 'Pagamento combinado fora do app'}
-                </small>
-              </span>
-            </label>
-          ))}
+  return (
+    <section className="main-column full receivables-page">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Ambiente financeiro de teste</span>
+          <h2>Recebimentos</h2>
+          <p className="section-subtitle">Acompanhe valores simulados reservados e liberados após a entrega.</p>
         </div>
+        <span className="experimental-pill"><ShieldCheck size={15} /> Nenhum valor real será movimentado</span>
       </div>
 
-      <aside className="side-panel">
-        <PanelHeader icon={CreditCard} title="Modo experimental" />
-        <div className="experimental-banner compact-banner">
-          <ShieldCheck size={18} />
-          <div>
-            <strong>Pagamentos simulados</strong>
-            <span>Estas opções definem o que aparece no checkout, sem movimentar dinheiro.</span>
+      <div className="receivables-grid">
+        <article className="approval-panel payout-account-panel">
+          <div className="section-heading compact-heading">
+            <div>
+              <h3>Conta de recebimento</h3>
+              <p className="section-subtitle">Vínculo exclusivamente fictício para validar o fluxo intermediado.</p>
+            </div>
+            <span className={`status-badge ${account.status}`}>{account.status === 'connected' ? 'Conectada' : account.status === 'suspended' ? 'Suspensa' : 'Não conectada'}</span>
           </div>
+
+          {connected ? (
+            <div className="connected-account">
+              <BadgeCheck size={28} />
+              <div>
+                <strong>Conta de teste conectada</strong>
+                <span>{account.storeName} · {account.testAccountId}</span>
+                <small>Nenhuma conta bancária real foi vinculada.</small>
+              </div>
+            </div>
+          ) : account.status === 'suspended' ? (
+            <div className="notice">Esta conta de teste foi suspensa pelo administrador do ambiente.</div>
+          ) : (
+            <form className="payout-connect-form" onSubmit={connectAccount}>
+              <label>Nome do responsável<input value={accountForm.responsibleName} onChange={(event) => setAccountForm({ ...accountForm, responsibleName: event.target.value })} minLength="3" required /></label>
+              <label>Nome da loja<input value={accountForm.storeName} onChange={(event) => setAccountForm({ ...accountForm, storeName: event.target.value })} minLength="2" required /></label>
+              <label className="checkbox-row"><input type="checkbox" checked={accountForm.acceptedTestTerms} onChange={(event) => setAccountForm({ ...accountForm, acceptedTestTerms: event.target.checked })} required /><span>Aceito os termos do ambiente de testes e entendo que nenhum dinheiro será movimentado.</span></label>
+              <button className="primary-button" type="submit" disabled={connecting}>{connecting ? 'Conectando...' : 'Conectar conta de recebimento para testes'}</button>
+            </form>
+          )}
+        </article>
+
+        <article className="approval-panel">
+          <PanelHeader icon={CreditCard} title="Formas aceitas no checkout" />
+          <div className="payment-settings-grid">
+            {Object.entries(paymentMethodSettingFields).map(([method, field]) => (
+              <label className="payment-toggle-card" key={method}>
+                <input type="checkbox" checked={Boolean(form[field])} onChange={(event) => updateField(field, event.target.checked)} />
+                <span><strong>{paymentLabels[method]}</strong><small>{onlinePaymentMethods.includes(method) ? 'Simulação intermediada pelo TimeOut' : 'Opção registrada no pedido de teste'}</small></span>
+              </label>
+            ))}
+          </div>
+          <label className="checkbox-line"><input type="checkbox" checked={Boolean(form.isActive)} onChange={(event) => updateField('isActive', event.target.checked)} /> Formas de pagamento ativas</label>
+          <button className="ghost-button" type="button" onClick={() => onSave(form)}><Check size={18} /> Salvar formas de pagamento</button>
+        </article>
+      </div>
+
+      <div className="metrics-grid financial-metrics">
+        <article className="metric-card"><span>Vendas brutas movimentadas</span><strong>{money.format(Number(summary.grossMoved || 0))}</strong></article>
+        <article className="metric-card"><span>Valores reservados</span><strong>{money.format(Number(summary.heldAmount || 0))}</strong></article>
+        <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(summary.commissions || 0))}</strong></article>
+        <article className="metric-card"><span>Saldo líquido disponível</span><strong>{money.format(Number(summary.netAvailable || 0))}</strong></article>
+        <article className="metric-card"><span>Valores reembolsados</span><strong>{money.format(Number(summary.refundedAmount || 0))}</strong></article>
+      </div>
+
+      <div className="financial-history">
+        <div className="section-heading">
+          <h3>Histórico de transações</h3>
+          <span>{transactions.length} registros</span>
         </div>
-        <label>
-          Identificação de teste
-          <input value="Simulador interno TimeOut" disabled />
-        </label>
-        <label className="checkbox-line">
-          <input
-            type="checkbox"
-            checked={Boolean(form.isActive)}
-            onChange={(event) => updateField('isActive', event.target.checked)}
-          />
-          Pagamentos ativos
-        </label>
-        <p className="muted-note">
-          A integração com pagamento real permanece desativada nesta fase de validação.
-        </p>
-        <button className="primary-button" type="button" onClick={() => onSave(form)}>
-          <Check size={18} />
-          Salvar formas de pagamento
-        </button>
-      </aside>
+        <div className="financial-table payout-history">
+          {transactions.map((transaction) => (
+            <div className="financial-row" key={transaction.id}>
+              <div><strong>Pedido #{transaction.orderId}</strong><span>{formatDate(transaction.createdAt || transaction.simulatedAt)}</span></div>
+              <div><span>Bruto</span><strong>{money.format(Number(transaction.grossAmount || transaction.amount || 0))}</strong></div>
+              <div><span>Comissão</span><strong>{money.format(Number(transaction.platformFeeAmount || 0))}</strong></div>
+              <div><span>Líquido</span><strong>{money.format(Number(transaction.sellerNetAmount || 0))}</strong></div>
+              <span className={`transaction-status ${transaction.status}`}>{transactionStatusLabels[transaction.status] || transaction.status}</span>
+              <span className="experimental-pill">Pagamento simulado</span>
+            </div>
+          ))}
+        </div>
+        {transactions.length === 0 ? <EmptyState text="Nenhuma transação simulada registrada ainda." /> : null}
+      </div>
     </section>
   )
 }
@@ -3564,16 +3670,14 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
             ) : null}
 
             {mode === 'seller' &&
-            order.paymentProvider !== 'mock' &&
-            onlinePaymentMethods.includes(order.paymentMethod) &&
-            order.paymentStatus !== 'paid' &&
+            !['held', 'settled', 'paid', 'not_required'].includes(order.paymentStatus) &&
             !['canceled', 'refused'].includes(order.status) ? (
-              <p className="muted-note">Aguarde a confirmação automática do pagamento para avançar este pedido.</p>
+              <p className="muted-note">Aguarde a aprovação simulada para que o valor fique reservado e o pedido possa avançar.</p>
             ) : null}
 
             {mode === 'seller' &&
             !['delivered', 'canceled', 'refused'].includes(order.status) &&
-            (order.paymentProvider === 'mock' || !onlinePaymentMethods.includes(order.paymentMethod) || order.paymentStatus === 'paid') ? (
+            ['held', 'settled', 'paid', 'not_required'].includes(order.paymentStatus) ? (
               <div className="status-actions">
                 {sellerStatusOptions.map((status) => (
                   <button key={status} type="button" onClick={() => onStatus(order.id, status)}>
@@ -4293,10 +4397,10 @@ function SellerFinancialView({ overview, onPlans }) {
       </div>
 
       <div className="metrics-grid financial-metrics">
-        <article className="metric-card"><span>Vendas entregues</span><strong>{summary.deliveredOrders}</strong></article>
-        <article className="metric-card"><span>Faturamento bruto</span><strong>{money.format(summary.grossRevenue)}</strong></article>
-        <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(summary.commissions)}</strong></article>
-        <article className="metric-card"><span>Receita líquida</span><strong>{money.format(summary.netRevenue)}</strong></article>
+        <article className="metric-card"><span>Transações liquidadas</span><strong>{summary.settledCount || 0}</strong></article>
+        <article className="metric-card"><span>Faturamento bruto</span><strong>{money.format(Number(summary.grossRevenue || 0))}</strong></article>
+        <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(summary.commissions || 0))}</strong></article>
+        <article className="metric-card"><span>Receita líquida</span><strong>{money.format(Number(summary.netAvailable || 0))}</strong></article>
       </div>
 
       <div className="financial-history">
@@ -4309,9 +4413,9 @@ function SellerFinancialView({ overview, onPlans }) {
             <div className="financial-row" role="row" key={transaction.id}>
               <div><strong>Pedido #{transaction.orderId}</strong><span>{formatDate(transaction.simulatedAt || transaction.createdAt)}</span></div>
               <span>{paymentLabels[transaction.paymentMethod] || transaction.paymentMethod}</span>
-              <strong>{money.format(Number(transaction.amount))}</strong>
+              <strong>{money.format(Number(transaction.grossAmount || transaction.amount))}</strong>
               <span className={`transaction-status ${transaction.status}`}>
-                {transaction.status === 'approved' ? 'Aprovado' : transaction.status === 'declined' ? 'Recusado' : 'Pendente'}
+                {transactionStatusLabels[transaction.status] || transaction.status}
               </span>
             </div>
           ))}
@@ -4487,13 +4591,21 @@ function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, 
   )
 }
 
-function PlatformAccessView({ data, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onRevealCpf }) {
+function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onRevealCpf }) {
   const [reason, setReason] = useState('')
   const [transfers, setTransfers] = useState({})
   if (!data) return <EmptyState text="Carregando painel da equipe TimeOut..." />
   return (
     <section className="main-column full access-page">
       <div className="section-heading"><div><span className="eyebrow">Equipe interna TimeOut</span><h2>Governança da plataforma</h2><p className="section-subtitle">Aprovações, ambientes, responsáveis e auditoria.</p></div><span className="experimental-pill"><ShieldCheck size={15} /> {data.identityVerificationMode === 'mock' ? 'Ambiente de teste: validações externas estão desativadas.' : 'Acesso restrito'}</span></div>
+      {payoutOverview ? (
+        <div className="metrics-grid financial-metrics">
+          <article className="metric-card"><span>Contas de teste</span><strong>{payoutOverview.accounts?.length || 0}</strong></article>
+          <article className="metric-card"><span>Total bruto movimentado</span><strong>{money.format(Number(payoutOverview.summary?.grossMoved || 0))}</strong></article>
+          <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(payoutOverview.summary?.commissions || 0))}</strong></article>
+          <article className="metric-card"><span>Líquido dos vendedores</span><strong>{money.format(Number(payoutOverview.summary?.netAvailable || 0))}</strong></article>
+        </div>
+      ) : null}
       <label className="decision-reason">Justificativa da decisão<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Obrigatória para correções e recusas" /></label>
       <article className="approval-panel"><div className="section-heading compact-heading"><h3>Solicitações de ambiente</h3><span>{data.applications?.length || 0}</span></div><div className="stack">
         {(data.applications || []).map((application) => <div className="application-card" key={application.id}><div><strong>{application.institutionName}</strong><span className={`status-badge ${application.status}`}>{accessStatusLabels[application.status]}</span></div><p>{application.responsibleName} · CPF {application.cpf} · {application.phone}</p><p>{application.address}</p><p>{application.relationship}: {application.justification}</p><div className="row-actions"><button className="ghost-button" type="button" onClick={() => onRevealCpf(application.id)}><Eye size={15} /> Ver CPF</button>{application.documentPath ? <button className="ghost-button" type="button" onClick={() => onViewDocument(application.id)}><FileText size={15} /> Comprovante</button> : null}<button className="primary-button compact-button" type="button" onClick={() => onReviewApplication(application.id, 'approved')}><Check size={15} /> Aprovar</button><button className="ghost-button" type="button" onClick={() => onReviewApplication(application.id, 'changes_requested', reason)}>Pedir correção</button><button className="ghost-button danger-text" type="button" onClick={() => onReviewApplication(application.id, 'rejected', reason)}><X size={15} /> Recusar</button></div><ApplicationHistory application={application} /></div>)}
@@ -4507,7 +4619,7 @@ function PlatformAccessView({ data, onReviewApplication, onToggleEnvironment, on
   )
 }
 
-function AdminMonetizationView({ overview, plans, onReviewRequest, onChangePlan, onSaveInstitutional }) {
+function AdminMonetizationView({ overview, payoutOverview, plans, onReviewRequest, onChangePlan, onSaveInstitutional, onPayoutStatus }) {
   const initialConfig = overview?.environment?.institutionalPlanConfig || {}
   const [institutional, setInstitutional] = useState({
     displayName: initialConfig.displayName || '',
@@ -4539,6 +4651,43 @@ function AdminMonetizationView({ overview, plans, onReviewRequest, onChangePlan,
         <article className="metric-card"><span>Vendas entregues</span><strong>{overview.summary.deliveredOrders}</strong></article>
         <article className="metric-card"><span>Comissões confirmadas</span><strong>{money.format(overview.summary.commissions)}</strong></article>
       </div>
+
+      {payoutOverview ? (
+        <div className="admin-monetization-section payout-admin-section">
+          <div className="section-heading compact-heading">
+            <div><h3>Recebimentos simulados</h3><p className="section-subtitle">Contas e movimentações somente deste ambiente.</p></div>
+            <span>{payoutOverview.accounts?.length || 0} contas</span>
+          </div>
+          <div className="metrics-grid financial-metrics">
+            <article className="metric-card"><span>Bruto movimentado</span><strong>{money.format(Number(payoutOverview.summary?.grossMoved || 0))}</strong></article>
+            <article className="metric-card"><span>Reservado</span><strong>{money.format(Number(payoutOverview.summary?.heldAmount || 0))}</strong></article>
+            <article className="metric-card"><span>Comissões</span><strong>{money.format(Number(payoutOverview.summary?.commissions || 0))}</strong></article>
+            <article className="metric-card"><span>Líquido dos vendedores</span><strong>{money.format(Number(payoutOverview.summary?.netAvailable || 0))}</strong></article>
+          </div>
+          <div className="payout-state-strip">
+            <span><strong>{payoutOverview.summary?.pendingCount || 0}</strong> pendentes</span>
+            <span><strong>{payoutOverview.summary?.heldCount || 0}</strong> reservadas</span>
+            <span><strong>{payoutOverview.summary?.settledCount || 0}</strong> liquidadas</span>
+            <span><strong>{payoutOverview.summary?.refundedCount || 0}</strong> reembolsadas</span>
+          </div>
+          <div className="payout-admin-grid">
+            <div className="stack">
+              {(payoutOverview.accounts || []).map((account) => (
+                <article className="application-card" key={account.id}>
+                  <div><strong>{account.seller?.name || account.storeName}</strong><span className={`status-badge ${account.status}`}>{account.status === 'connected' ? 'Conectada' : account.status === 'suspended' ? 'Suspensa' : 'Pendente'}</span></div>
+                  <p>{account.storeName} · {account.testAccountId}</p>
+                  <button className="ghost-button" type="button" onClick={() => onPayoutStatus(account.userId, account.status !== 'suspended')}>{account.status === 'suspended' ? 'Reativar conta' : 'Suspender conta'}</button>
+                </article>
+              ))}
+            </div>
+            <div className="payout-missing-list">
+              <div className="section-heading compact-heading"><h3>Sem conta conectada</h3><span>{payoutOverview.sellersWithoutAccount?.length || 0}</span></div>
+              {(payoutOverview.sellersWithoutAccount || []).map((seller) => <p key={seller.id}><strong>{seller.name}</strong><br />{seller.email}</p>)}
+              {(payoutOverview.sellersWithoutAccount || []).length === 0 ? <p className="muted-note">Todos os vendedores possuem uma conta de teste.</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="admin-monetization-grid">
         <div className="admin-monetization-section">

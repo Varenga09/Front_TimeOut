@@ -150,3 +150,43 @@ describe('Monitoramento de segurança', () => {
     expect(SecurityMonitor.isRateLimited('test@email.com')).toBe(true)
   })
 })
+
+describe('Recebimentos simulados', () => {
+  test('mostra conexão fictícia sem solicitar dados bancários', async () => {
+    const user = {
+      id: 7,
+      name: 'Vendedor Teste',
+      email: 'vendedor@timeout.local',
+      phone: '(12) 99999-9999',
+      role: 'seller',
+      environmentId: 1,
+      emailVerifiedAt: new Date().toISOString(),
+      phoneVerifiedAt: new Date().toISOString(),
+    }
+    localStorage.getItem.mockReturnValue(JSON.stringify({ token: 'token-teste', user }))
+    api.get.mockImplementation(async (url) => {
+      const payloads = {
+        '/auth/me': { user },
+        '/products': { products: [] },
+        '/categories': { categories: [] },
+        '/orders/my-orders': { orders: [] },
+        '/orders/seller-orders': { orders: [] },
+        '/coupons': { coupons: [] },
+        '/payments/settings': { settings: { acceptsPix: true, isActive: true } },
+        '/plans': { plans: [] },
+        '/payments/payout-account': { account: { status: 'not_connected' }, summary: {}, transactions: [] },
+        '/access/me/applications': { sellerApplications: [], environmentApplications: [] },
+        '/access/notifications': { notifications: [] },
+      }
+      return { data: { data: payloads[url] || {} } }
+    })
+
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: /Recebimentos/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Recebimentos', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Conectar conta de recebimento para testes' })).toBeInTheDocument()
+    expect(screen.queryByText(/chave pix/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/agência/i)).not.toBeInTheDocument()
+  })
+})

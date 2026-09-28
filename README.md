@@ -19,6 +19,7 @@ Frontend web do LocalFood, uma plataforma de pedidos locais para escolas, empres
 - Solicitacao de vendedor com aprovacao administrativa.
 - Comparacao dos planos Basico, Pro e Institucional.
 - Painel financeiro do vendedor com faturamento, comissoes e receita liquida.
+- Area de Recebimentos com conta ficticia, valores reservados, liquidados e reembolsados.
 - Central administrativa de monetizacao e pagamentos simulados.
 - Solicitacoes completas de vendedor e de criacao de ambiente.
 - Aprovacao de participantes em ambientes privados.
@@ -100,13 +101,14 @@ SENAI2026
 1. Entre como cliente.
 2. Veja a vitrine de produtos.
 3. Adicione Coxinha e Suco ao carrinho.
-4. Envie o pedido e escolha o resultado simulado do pagamento.
-5. Entre como administrador e aprove uma solicitacao de vendedor em "Acessos e aprovacoes".
-6. Entre como vendedor e abra "Pedidos recebidos".
-7. Atualize o pedido para aceito, preparando, pronto e entregue.
-8. Confira a comissao confirmada na pagina "Financeiro".
-9. Compare os planos e teste a troca entre Basico e Pro.
-10. Entre como equipe TimeOut para analisar ambientes, transferir responsaveis e conferir a auditoria.
+4. Entre como vendedor, abra `Recebimentos` e conecte a conta ficticia de teste.
+5. Envie o pedido como cliente e escolha o resultado simulado do pagamento.
+6. Entre como administrador e aprove uma solicitacao de vendedor em "Acessos e aprovacoes".
+7. Entre como vendedor e abra "Pedidos recebidos".
+8. Atualize o pedido para aceito, preparando, pronto e entregue.
+9. Confira em `Recebimentos` que o valor reservado virou saldo liquido somente depois da entrega.
+10. Compare os planos e teste a troca entre Basico e Pro; pedidos antigos mantem a taxa original.
+11. Entre como equipe TimeOut para analisar ambientes, transferir responsaveis e conferir a auditoria.
 
 ## Scripts
 
@@ -130,7 +132,10 @@ src/
 
 ## Observacoes
 
-- Todos os pagamentos desta fase sao simulados, aprovados automaticamente e nao movimentam dinheiro real.
+- Todos os pagamentos desta fase sao simulados e nao movimentam dinheiro real.
+- O cliente escolhe se a simulacao sera aprovada, pendente ou recusada.
+- Uma aprovacao reserva o valor; a divisao entre TimeOut e vendedor so e confirmada na entrega.
+- Nenhuma tela solicita chave Pix pessoal, conta bancaria, senha ou cartao do vendedor.
 - As mensalidades dos planos tambem sao simuladas.
 - O vendedor e o cliente precisam estar no mesmo ambiente.
 - O backend continua responsavel pelas regras importantes, como estoque, permissao e seguranca.

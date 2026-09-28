@@ -4921,3 +4921,165 @@ body,
   .notifications-popover { right: 16px; }
   .approval-history span { grid-template-columns: minmax(0, 1fr); }
 }
+
+.receivables-page {
+  gap: 18px;
+}
+
+.receivables-grid,
+.payout-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.payout-account-panel,
+.payout-connect-form,
+.connected-account,
+.payout-missing-list {
+  display: grid;
+  gap: 14px;
+}
+
+.payout-connect-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.payout-connect-form label:not(.checkbox-row) {
+  display: grid;
+  gap: 7px;
+  color: #082f50;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.payout-connect-form input[type='text'],
+.payout-connect-form input:not([type]) {
+  min-width: 0;
+  border: 1px solid #ccd6df;
+  border-radius: 7px;
+  padding: 11px 12px;
+  color: #102033;
+  font: inherit;
+}
+
+.payout-connect-form .checkbox-row,
+.payout-connect-form .primary-button {
+  grid-column: 1 / -1;
+}
+
+.connected-account {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border-left: 3px solid #14a66f;
+  padding: 14px;
+  background: #eefaf5;
+  color: #08744f;
+}
+
+.connected-account > div {
+  display: grid;
+  gap: 4px;
+}
+
+.connected-account small,
+.connected-account span {
+  color: #506f65;
+}
+
+.payout-history .financial-row {
+  grid-template-columns: minmax(150px, 1.2fr) repeat(3, minmax(100px, .7fr)) auto auto;
+}
+
+.payout-history .financial-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.payout-history .financial-row > div > span {
+  color: #6a7d90;
+  font-size: 11px;
+}
+
+.payout-admin-section {
+  display: grid;
+  gap: 16px;
+}
+
+.payout-state-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #e1e7ed;
+  border-radius: 7px;
+  background: #f7f9fb;
+}
+
+.payout-state-strip span {
+  display: grid;
+  gap: 2px;
+  border-left: 1px solid #e1e7ed;
+  padding: 12px;
+  color: #607287;
+  font-size: 12px;
+}
+
+.payout-state-strip span:first-child { border-left: 0; }
+.payout-state-strip strong { color: #082f50; font-size: 19px; }
+
+.payout-missing-list {
+  border-left: 1px solid #e1e7ed;
+  padding-left: 18px;
+}
+
+.payout-missing-list p {
+  margin: 0;
+  color: #607287;
+}
+
+.checkout-intermediation {
+  margin-top: 4px;
+}
+
+@media (max-width: 1050px) {
+  .receivables-grid,
+  .payout-admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .payout-missing-list {
+    border-top: 1px solid #e1e7ed;
+    border-left: 0;
+    padding-top: 18px;
+    padding-left: 0;
+  }
+
+  .payout-history .financial-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .payout-connect-form,
+  .payout-history .financial-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .payout-connect-form .checkbox-row,
+  .payout-connect-form .primary-button {
+    grid-column: auto;
+  }
+
+  .payout-state-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payout-state-strip span:nth-child(3) {
+    border-top: 1px solid #e1e7ed;
+    border-left: 0;
+  }
+
+  .payout-state-strip span:nth-child(4) {
+    border-top: 1px solid #e1e7ed;
+  }
+}
