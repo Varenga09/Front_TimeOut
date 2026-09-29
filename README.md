@@ -1,10 +1,10 @@
-# LocalFood Web
+# Time Out Web
 
-Frontend web do LocalFood, uma plataforma de pedidos locais para escolas, empresas, fabricas, faculdades e outros ambientes fechados.
+Frontend web do Time Out, uma plataforma de pedidos locais para escolas, empresas, fabricas, faculdades e outros ambientes fechados.
 
 ## O Que Este Frontend Faz
 
-- Login com JWT usando a API LocalFood.
+- Login com JWT usando a API Time Out.
 - Cadastro de cliente usando codigo de ambiente.
 - Edicao de perfil com nome, e-mail, telefone, senha e foto.
 - Vitrine de produtos do ambiente do usuario.
@@ -23,7 +23,7 @@ Frontend web do LocalFood, uma plataforma de pedidos locais para escolas, empres
 - Central administrativa de monetizacao e pagamentos simulados.
 - Solicitacoes completas de vendedor e de criacao de ambiente.
 - Aprovacao de participantes em ambientes privados.
-- Painel exclusivo da equipe TimeOut para ambientes e administradores.
+- Painel exclusivo da equipe Time Out para ambientes e administradores.
 - Notificacoes internas, linha do tempo e auditoria.
 
 ## Tecnologias
@@ -45,7 +45,7 @@ http://localhost:3001/api/v1
 No projeto da API, rode:
 
 ```bash
-cd C:\FatecoinsGPT\local-food-api
+cd C:\TimeOut\timeout-api
 npm run dev
 ```
 
@@ -54,7 +54,7 @@ Se a API estiver em outra porta, altere o arquivo `.env`.
 ## Instalar
 
 ```bash
-cd C:\FatecoinsGPT\local-food-web
+cd C:\TimeOut\timeout-web
 npm install
 copy .env.example .env
 ```
@@ -85,7 +85,7 @@ Essas contas sao criadas pelo seeder do backend:
 Cliente: cliente@timeout.local
 Vendedor pendente: pendente@timeout.local
 Administrador do ambiente: admin.ambiente@timeout.local
-Equipe TimeOut: platform@timeout.local
+Equipe Time Out: platform@timeout.local
 
 Senha comum: TimeOutDev#2026
 ```
@@ -110,7 +110,7 @@ SENAI2026
 10. Suspenda a conta de teste, entregue outro pedido e confirme que o recebimento fica retido.
 11. Reative a conta como administrador e use `Tentar liberar novamente`.
 12. Compare os planos e teste a troca entre Basico e Pro; pedidos antigos mantem a taxa original.
-13. Entre como equipe TimeOut para analisar ambientes, transferir responsaveis e conferir a auditoria.
+13. Entre como equipe Time Out para analisar ambientes, transferir responsaveis e conferir a auditoria.
 
 ## Scripts
 
@@ -136,7 +136,7 @@ src/
 
 - Todos os pagamentos desta fase sao simulados e nao movimentam dinheiro real.
 - O cliente escolhe se a simulacao sera aprovada, pendente ou recusada.
-- Uma aprovacao reserva o valor; a divisao entre TimeOut e vendedor so e confirmada na entrega.
+- Uma aprovacao reserva o valor; a divisao entre Time Out e vendedor so e confirmada na entrega.
 - Conta suspensa nao libera comissao nem saldo; a nova tentativa fica disponível apenas para administradores autorizados.
 - Codigos completos de ambiente aparecem uma unica vez. Depois disso, o painel mostra somente a previa mascarada.
 - Nenhuma tela solicita chave Pix pessoal, conta bancaria, senha ou cartao do vendedor.

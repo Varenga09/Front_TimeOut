@@ -55,11 +55,26 @@ import {
 import { api, getAssetUrl, getErrorMessage, setAuthToken } from './api'
 import './App.css'
 
-const SESSION_KEY = '@localfood:web:session'
-const SEARCH_HISTORY_KEY = '@localfood:web:recent-searches'
-const CART_KEY = '@localfood:web:cart'
+const SESSION_KEY = '@timeout:web:session'
+const LEGACY_SESSION_KEY = '@localfood:web:session'
+const SEARCH_HISTORY_KEY = '@timeout:web:recent-searches'
+const LEGACY_SEARCH_HISTORY_KEY = '@localfood:web:recent-searches'
+const CART_KEY = '@timeout:web:cart'
+const LEGACY_CART_KEY = '@localfood:web:cart'
 const CLEAR_SESSION_PARAMS = ['clearSession', 'logoutAll']
-const APP_NAVIGATION_EVENT = 'localfood:navigate'
+const APP_NAVIGATION_EVENT = 'timeout:navigate'
+
+function readCompatibleStorage(primaryKey, legacyKey) {
+  const currentValue = localStorage.getItem(primaryKey)
+  if (currentValue !== null) return currentValue
+
+  const legacyValue = localStorage.getItem(legacyKey)
+  if (legacyValue !== null) {
+    localStorage.setItem(primaryKey, legacyValue)
+    localStorage.removeItem(legacyKey)
+  }
+  return legacyValue
+}
 
 function compactQuery(query) {
   return Object.fromEntries(
@@ -69,6 +84,7 @@ function compactQuery(query) {
 
 function clearStoredSession() {
   localStorage.removeItem(SESSION_KEY)
+  localStorage.removeItem(LEGACY_SESSION_KEY)
   localStorage.removeItem('auth_token')
   localStorage.removeItem('csrf_token')
   sessionStorage.clear()
@@ -119,7 +135,7 @@ const paymentStatusLabels = {
   failed: 'Pagamento recusado',
   pending: 'Aguardando simulação',
   approved: 'Pagamento aprovado',
-  held: 'Valor reservado pelo TimeOut',
+  held: 'Valor reservado pelo Time Out',
   settled: 'Pagamento liquidado',
   declined: 'Pagamento recusado',
   refunded: 'Pagamento estornado',
@@ -336,9 +352,9 @@ function getCartItemsCount(cart) {
   return cart.reduce((sum, item) => sum + Number(item.cartQuantity || 0), 0)
 }
 
-function readStoredCart(storageKey) {
+function readStoredCart(storageKey, legacyStorageKey) {
   try {
-    const stored = JSON.parse(localStorage.getItem(storageKey))
+    const stored = JSON.parse(readCompatibleStorage(storageKey, legacyStorageKey))
     if (!Array.isArray(stored)) return []
 
     return stored.filter((item) =>
@@ -468,7 +484,7 @@ function App() {
       return null
     }
 
-    const stored = localStorage.getItem(SESSION_KEY)
+    const stored = readCompatibleStorage(SESSION_KEY, LEGACY_SESSION_KEY)
     if (!stored) return null
 
     try {
@@ -477,6 +493,7 @@ function App() {
       return parsed
     } catch {
       localStorage.removeItem(SESSION_KEY)
+      localStorage.removeItem(LEGACY_SESSION_KEY)
       return null
     }
   })
@@ -499,8 +516,10 @@ function App() {
 
     if (nextSession) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession))
+      localStorage.removeItem(LEGACY_SESSION_KEY)
     } else {
       localStorage.removeItem(SESSION_KEY)
+      localStorage.removeItem(LEGACY_SESSION_KEY)
     }
   }, [])
 
@@ -577,7 +596,7 @@ function App() {
 
 function Logo({ className = '' }) {
   return (
-    <div className={`logo-container ${className}`} aria-label="TIMEOUT">
+    <div className={`logo-container ${className}`} aria-label="Time Out">
       <svg viewBox="0 0 552 155" className="logo-svg" xmlns="http://www.w3.org/2000/svg" role="img">
         <defs>
           <radialGradient id="timeout-stopwatch-glow" cx="50%" cy="48%" r="58%">
@@ -829,7 +848,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
             <h2>{mode === 'login' ? 'Boas-vindas!' : mode === 'register' ? 'Criar conta' : 'Recuperar senha'}</h2>
             <p>
               {mode === 'login'
-                ? 'Informe seu e-mail e senha para acessar o TimeOut.'
+                ? 'Informe seu e-mail e senha para acessar o Time Out.'
                 : mode === 'register'
                   ? 'Crie sua conta gratuitamente para começar a fazer pedidos.'
                   : recoveryRequested
@@ -1041,7 +1060,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
               <>
                 <span>
                   {mode === 'login'
-                    ? 'Entrar no TimeOut'
+                    ? 'Entrar no Time Out'
                     : mode === 'register'
                       ? 'Criar minha conta'
                       : recoveryRequested
@@ -1461,6 +1480,7 @@ function Shell({
 
 function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const cartStorageKey = `${CART_KEY}:${session.user.id}:${session.user.environmentId}`
+  const legacyCartStorageKey = `${LEGACY_CART_KEY}:${session.user.id}:${session.user.environmentId}`
   const [view, setView] = useState(
     session.user.role === 'platform_admin'
       ? 'platform-access'
@@ -1491,7 +1511,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [environmentAccess, setEnvironmentAccess] = useState(null)
   const [platformAccess, setPlatformAccess] = useState(null)
   const [notifications, setNotifications] = useState([])
-  const [cart, setCart] = useState(() => readStoredCart(cartStorageKey))
+  const [cart, setCart] = useState(() => readStoredCart(cartStorageKey, legacyCartStorageKey))
   const [checkoutResult, setCheckoutResult] = useState(null)
   const [cartToast, setCartToast] = useState('')
   const [selectedProduct, setSelectedProduct] = useState(null)
@@ -1503,7 +1523,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [userFilters, setUserFilters] = useState({ search: '', role: '' })
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem(`${SEARCH_HISTORY_KEY}:${session.user.id}`)) || []
+      return JSON.parse(readCompatibleStorage(
+        `${SEARCH_HISTORY_KEY}:${session.user.id}`,
+        `${LEGACY_SEARCH_HISTORY_KEY}:${session.user.id}`,
+      )) || []
     } catch {
       return []
     }
@@ -1516,12 +1539,12 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   useEffect(() => {
     if (cartStorageKeyRef.current !== cartStorageKey) {
       cartStorageKeyRef.current = cartStorageKey
-      setCart(readStoredCart(cartStorageKey))
+      setCart(readStoredCart(cartStorageKey, legacyCartStorageKey))
       return
     }
 
     localStorage.setItem(cartStorageKey, JSON.stringify(cart))
-  }, [cart, cartStorageKey])
+  }, [cart, cartStorageKey, legacyCartStorageKey])
 
   useEffect(() => {
     function handleNavigation(event) {
@@ -1890,7 +1913,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       const { order, transaction } = response.data.data
       setCheckoutResult({ order, payment: transaction })
       const messages = {
-        approved: 'Pagamento de teste aprovado e reservado pelo TimeOut até a entrega.',
+        approved: 'Pagamento de teste aprovado e reservado pelo Time Out até a entrega.',
         pending: 'Pagamento de teste mantido como pendente.',
         declined: 'Pagamento de teste recusado.',
       }
@@ -2142,7 +2165,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   async function submitEnvironmentApplication(payload) {
     try {
       await api.post('/access/environment-applications', payload, { headers: { 'Content-Type': 'multipart/form-data' } })
-      onNotice('Solicitação de ambiente enviada para a equipe TimeOut')
+      onNotice('Solicitação de ambiente enviada para a equipe Time Out')
       await refresh()
       return true
     } catch (error) { onNotice(getErrorMessage(error)); return false }
@@ -2297,12 +2320,12 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   if (isPlatformAdmin) {
-    adminTabs.push(['platform-access', 'Equipe TimeOut', ShieldCheck])
+    adminTabs.push(['platform-access', 'Equipe Time Out', ShieldCheck])
   }
 
   const allTabs = [...primaryTabs, ...sellerTabs, ...adminTabs]
   const pageTitle = allTabs.find(([id]) => id === view)?.[1]
-    || (view === 'profile' ? 'Meu perfil' : view === 'checkout-payment' ? 'Pagamento' : 'TimeOut')
+    || (view === 'profile' ? 'Meu perfil' : view === 'checkout-payment' ? 'Pagamento' : 'Time Out')
 
   const navigation = (
     <nav className="sidebar-nav-groups" aria-label="Navegação principal">
@@ -3105,7 +3128,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
           <div className="experimental-banner compact-banner checkout-intermediation">
             <ShieldCheck size={18} />
             <div>
-              <strong>Pagamento intermediado pelo TimeOut</strong>
+              <strong>Pagamento intermediado pelo Time Out</strong>
               <span>Ambiente de teste: nenhum valor real será movimentado.</span>
             </div>
           </div>
@@ -3208,7 +3231,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
               <div className="experimental-banner">
                 <ShieldCheck size={19} />
                 <div>
-                  <strong>Pagamento intermediado pelo TimeOut</strong>
+                  <strong>Pagamento intermediado pelo Time Out</strong>
                   <span>Simulação sem Pix real, dados bancários ou movimentação de dinheiro.</span>
                 </div>
               </div>
@@ -3265,7 +3288,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
               <div>
                 <h3>Checkout seguro</h3>
                 <p>
-                  O cartão é processado pelo ambiente seguro do gateway. O TimeOut não armazena dados de cartão.
+                  O cartão é processado pelo ambiente seguro do gateway. O Time Out não armazena dados de cartão.
                 </p>
                 {payment.checkoutUrl ? (
                   <a className="primary-button compact-button external-link-button" href={payment.checkoutUrl} target="_blank" rel="noreferrer">
@@ -3371,7 +3394,7 @@ function PaymentSettingsView({ settings, overview, onSave, onConnect, query, onQ
             {Object.entries(paymentMethodSettingFields).map(([method, field]) => (
               <label className="payment-toggle-card" key={method}>
                 <input type="checkbox" checked={Boolean(form[field])} onChange={(event) => updateField(field, event.target.checked)} />
-                <span><strong>{paymentLabels[method]}</strong><small>{onlinePaymentMethods.includes(method) ? 'Simulação intermediada pelo TimeOut' : 'Opção registrada no pedido de teste'}</small></span>
+                <span><strong>{paymentLabels[method]}</strong><small>{onlinePaymentMethods.includes(method) ? 'Simulação intermediada pelo Time Out' : 'Opção registrada no pedido de teste'}</small></span>
               </label>
             ))}
           </div>
@@ -3383,7 +3406,7 @@ function PaymentSettingsView({ settings, overview, onSave, onConnect, query, onQ
       <div className="metrics-grid financial-metrics">
         <article className="metric-card"><span>Vendas brutas movimentadas</span><strong>{money.format(Number(summary.grossMoved || 0))}</strong></article>
         <article className="metric-card"><span>Valores reservados</span><strong>{money.format(Number(summary.heldAmount || 0))}</strong></article>
-        <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(summary.commissions || 0))}</strong></article>
+        <article className="metric-card"><span>Comissões Time Out</span><strong>{money.format(Number(summary.commissions || 0))}</strong></article>
         <article className="metric-card"><span>Saldo líquido disponível</span><strong>{money.format(Number(summary.netAvailable || 0))}</strong></article>
         <article className="metric-card"><span>Valores reembolsados</span><strong>{money.format(Number(summary.refundedAmount || 0))}</strong></article>
       </div>
@@ -3501,7 +3524,7 @@ function SalesDashboard({ orders, products }) {
             <strong>{money.format(grossTotal)}</strong>
           </article>
           <article className="metric-card">
-            <span>Comissões TimeOut</span>
+            <span>Comissões Time Out</span>
             <strong>{money.format(platformFeeTotal)}</strong>
           </article>
           <article className="metric-card">
@@ -3668,7 +3691,7 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
               {mode === 'seller' ? (
                 <>
                   <span>
-                    <Percent size={15} /> Comissão TimeOut ({formatPercent(order.commissionRate ?? order.platformFeeRate)}):{' '}
+                    <Percent size={15} /> Comissão Time Out ({formatPercent(order.commissionRate ?? order.platformFeeRate)}):{' '}
                     {order.status === 'delivered' ? `-${money.format(getOrderPlatformFee(order))}` : 'confirmada na entrega'}
                   </span>
                   <span>
@@ -4345,7 +4368,7 @@ function PlansView({ plans, subscription, userRole, onChoose, onProfile }) {
       <div className="section-heading plans-heading">
         <div>
           <span className="eyebrow">Modelo comercial experimental</span>
-          <h2>Planos para vender no TimeOut</h2>
+          <h2>Planos para vender no Time Out</h2>
           <p className="section-subtitle">Compare mensalidade e comissão. Nenhuma cobrança real é feita nesta fase.</p>
         </div>
         <span className="experimental-pill"><ShieldCheck size={15} /> Ambiente de teste</span>
@@ -4430,7 +4453,7 @@ function SellerFinancialView({ overview, onPlans, query, onQuery }) {
       <div className="metrics-grid financial-metrics">
         <article className="metric-card"><span>Transações liquidadas</span><strong>{summary.settledCount || 0}</strong></article>
         <article className="metric-card"><span>Faturamento bruto</span><strong>{money.format(Number(summary.grossRevenue || 0))}</strong></article>
-        <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(summary.commissions || 0))}</strong></article>
+        <article className="metric-card"><span>Comissões Time Out</span><strong>{money.format(Number(summary.commissions || 0))}</strong></article>
         <article className="metric-card"><span>Receita líquida</span><strong>{money.format(Number(summary.netAvailable || 0))}</strong></article>
       </div>
 
@@ -4620,7 +4643,7 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
               <label className="wide-field">Justificativa<textarea required minLength={10} value={environmentForm.justification} onChange={(event) => setEnvironmentForm({ ...environmentForm, justification: event.target.value })} /></label>
               <label className="wide-field">Descrição do ambiente<textarea required minLength={10} value={environmentForm.environmentDescription} onChange={(event) => setEnvironmentForm({ ...environmentForm, environmentDescription: event.target.value })} /></label>
             </div>
-            <button className="primary-button" disabled={submitting || environmentApplicationActive}><Send size={17} /> {environmentApplicationActive ? 'Solicitação já em análise' : 'Enviar para a equipe TimeOut'}</button>
+            <button className="primary-button" disabled={submitting || environmentApplicationActive}><Send size={17} /> {environmentApplicationActive ? 'Solicitação já em análise' : 'Enviar para a equipe Time Out'}</button>
           </form>
         ) : null}
       </div>
@@ -4680,16 +4703,16 @@ function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, 
 function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onRevealCpf, financialQuery, onFinancialQuery, onRetrySettlement }) {
   const [reason, setReason] = useState('')
   const [transfers, setTransfers] = useState({})
-  if (!data) return <EmptyState text="Carregando painel da equipe TimeOut..." />
+  if (!data) return <EmptyState text="Carregando painel da equipe Time Out..." />
   return (
     <section className="main-column full access-page">
-      <div className="section-heading"><div><span className="eyebrow">Equipe interna TimeOut</span><h2>Governança da plataforma</h2><p className="section-subtitle">Aprovações, ambientes, responsáveis e auditoria.</p></div><span className="experimental-pill"><ShieldCheck size={15} /> {data.identityVerificationMode === 'mock' ? 'Ambiente de teste: validações externas estão desativadas.' : 'Acesso restrito'}</span></div>
+      <div className="section-heading"><div><span className="eyebrow">Equipe interna Time Out</span><h2>Governança da plataforma</h2><p className="section-subtitle">Aprovações, ambientes, responsáveis e auditoria.</p></div><span className="experimental-pill"><ShieldCheck size={15} /> {data.identityVerificationMode === 'mock' ? 'Ambiente de teste: validações externas estão desativadas.' : 'Acesso restrito'}</span></div>
       {payoutOverview ? (
         <div className="admin-monetization-section">
           <div className="metrics-grid financial-metrics">
             <article className="metric-card"><span>Contas de teste</span><strong>{payoutOverview.accounts?.length || 0}</strong></article>
             <article className="metric-card"><span>Total bruto movimentado</span><strong>{money.format(Number(payoutOverview.summary?.grossMoved || 0))}</strong></article>
-            <article className="metric-card"><span>Comissões TimeOut</span><strong>{money.format(Number(payoutOverview.summary?.commissions || 0))}</strong></article>
+            <article className="metric-card"><span>Comissões Time Out</span><strong>{money.format(Number(payoutOverview.summary?.commissions || 0))}</strong></article>
             <article className="metric-card"><span>Líquido dos vendedores</span><strong>{money.format(Number(payoutOverview.summary?.netAvailable || 0))}</strong></article>
           </div>
           <RetainedTransactions overview={payoutOverview} onRetry={onRetrySettlement} />
@@ -4823,7 +4846,7 @@ function AdminMonetizationView({ overview, payoutOverview, plans, onReviewReques
       }) }}>
         <div className="section-heading compact-heading"><div><h3>Plano institucional</h3><p className="section-subtitle">Personalização local, ainda sem contrato ou cobrança.</p></div></div>
         <div className="institutional-fields">
-          <label>Nome de exibição<input value={institutional.displayName} onChange={(event) => setInstitutional({ ...institutional, displayName: event.target.value })} placeholder="Ex: TimeOut SENAI" /></label>
+          <label>Nome de exibição<input value={institutional.displayName} onChange={(event) => setInstitutional({ ...institutional, displayName: event.target.value })} placeholder="Ex: Time Out SENAI" /></label>
           <label>Imagem institucional<input type="url" value={institutional.imageUrl} onChange={(event) => setInstitutional({ ...institutional, imageUrl: event.target.value })} placeholder="https://..." /></label>
           <label>Mensalidade simulada<input type="number" min="0" step="0.01" value={institutional.monthlyPrice} onChange={(event) => setInstitutional({ ...institutional, monthlyPrice: event.target.value })} /></label>
           <label>Comissão<input type="number" min="0" max="100" step="0.01" value={institutional.commissionRate} onChange={(event) => setInstitutional({ ...institutional, commissionRate: event.target.value })} /></label>
@@ -4983,7 +5006,7 @@ function ProfileView({
 
         <div className="detail-section create-place-panel">
           <PanelHeader icon={FileText} title="Novo ambiente" />
-          <p>A criação de ambientes passa por análise da equipe TimeOut.</p>
+          <p>A criação de ambientes passa por análise da equipe Time Out.</p>
           <button className="ghost-button wide" type="button" onClick={onOpenAccess}>
             <FileText size={17} /> Abrir formulário de solicitação
           </button>
@@ -5183,7 +5206,7 @@ function AdminEnvironmentsView({ environments, activeEnvironmentId, onSwitch }) 
 
       <aside className="side-panel">
         <PanelHeader icon={ShieldCheck} title="Criação protegida" />
-        <p>Novos ambientes são criados somente após aprovação da equipe TimeOut. O código de acesso é administrado no painel de acessos.</p>
+        <p>Novos ambientes são criados somente após aprovação da equipe Time Out. O código de acesso é administrado no painel de acessos.</p>
       </aside>
     </section>
   )
@@ -5286,7 +5309,7 @@ function EmptyState({ text }) {
 function roleLabel(role) {
   if (role === 'seller') return 'Vendedor'
   if (role === 'admin' || role === 'environment_admin') return 'Administrador do ambiente'
-  if (role === 'platform_admin') return 'Equipe TimeOut'
+  if (role === 'platform_admin') return 'Equipe Time Out'
   return 'Cliente'
 }
 

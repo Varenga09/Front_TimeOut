@@ -1,7 +1,8 @@
 import axios from 'axios'
 import { SecurityMonitor } from './security.js'
 
-const SESSION_KEY = '@localfood:web:session'
+const SESSION_KEY = '@timeout:web:session'
+const LEGACY_SESSION_KEY = '@localfood:web:session'
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1'
@@ -87,6 +88,7 @@ api.interceptors.response.use(
       // Clear session on unauthorized
       setAuthToken(null)
       localStorage.removeItem(SESSION_KEY)
+      localStorage.removeItem(LEGACY_SESSION_KEY)
     }
     
     return Promise.reject(error)

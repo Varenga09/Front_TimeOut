@@ -1,4 +1,4 @@
-// Security configuration for LocalFood application
+// Security configuration for the Time Out application
 export const SECURITY_CONFIG = {
   // Password requirements
   PASSWORD: {
@@ -19,8 +19,10 @@ export const SECURITY_CONFIG = {
   
   // Session security
   SESSION: {
-    TOKEN_STORAGE_KEY: '@localfood:web:session',
-    REFRESH_TOKEN_KEY: '@localfood:web:refresh-token',
+    TOKEN_STORAGE_KEY: '@timeout:web:session',
+    REFRESH_TOKEN_KEY: '@timeout:web:refresh-token',
+    LEGACY_TOKEN_STORAGE_KEY: '@localfood:web:session',
+    LEGACY_REFRESH_TOKEN_KEY: '@localfood:web:refresh-token',
     MAX_AGE: 24 * 60 * 60 * 1000, // 24 hours
     REFRESH_THRESHOLD: 2 * 60 * 60 * 1000, // 2 hours before expiry
   },

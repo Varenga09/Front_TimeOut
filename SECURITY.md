@@ -1,4 +1,4 @@
-# Sistema de Segurança - LocalFood
+# Sistema de Segurança - Time Out
 
 ## Visão Geral
 
@@ -242,6 +242,4 @@ npm run build
 
 ## Suporte
 
-Para dúvidas sobre segurança, por favor contacte:
-- suporte@localfood.com
-- Documentação técnica completa disponível em `/docs/security`
+O canal oficial de suporte de seguranca ainda precisa ser definido. Nao use os antigos enderecos provisórios do projeto.

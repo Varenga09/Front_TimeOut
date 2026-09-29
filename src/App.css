@@ -633,7 +633,7 @@
   opacity: 0.85;
 }
 
-/* Custom logo TIMEOUT styling */
+/* Custom Time Out logo styling */
 .logo-container {
   display: block;
   width: clamp(220px, 23vw, 340px);
@@ -2077,7 +2077,7 @@ textarea {
   background: #fffaeb;
 }
 
-/* TIMEOUT operational dashboard refresh */
+/* Time Out operational dashboard refresh */
 .app-shell {
   min-height: 100vh;
   grid-template-columns: 300px minmax(0, 1fr);

@@ -24,7 +24,7 @@ describe('Tela de acesso', () => {
   test('renderiza a tela de login', () => {
     render(createElement(App))
 
-    expect(screen.getByLabelText('TIMEOUT')).toBeInTheDocument()
+    expect(screen.getByLabelText('Time Out')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Boas-vindas!' })).toBeInTheDocument()
   })
 
