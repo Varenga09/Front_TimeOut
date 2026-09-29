@@ -61,6 +61,12 @@ const CART_KEY = '@localfood:web:cart'
 const CLEAR_SESSION_PARAMS = ['clearSession', 'logoutAll']
 const APP_NAVIGATION_EVENT = 'localfood:navigate'
 
+function compactQuery(query) {
+  return Object.fromEntries(
+    Object.entries(query).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+  )
+}
+
 function clearStoredSession() {
   localStorage.removeItem(SESSION_KEY)
   localStorage.removeItem('auth_token')
@@ -1596,7 +1602,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   const loadFinancialOverview = useCallback(async () => {
     if (!isApprovedSeller) return
-    const response = await api.get('/payments/payout-account', { params: financialQuery })
+    const response = await api.get('/payments/payout-account', { params: compactQuery(financialQuery) })
     setFinancialOverview(response.data.data)
   }, [financialQuery, isApprovedSeller])
 
@@ -1608,13 +1614,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   const loadAdminPayoutOverview = useCallback(async () => {
     if (!isAdmin) return
-    const response = await api.get('/payments/admin/overview', { params: adminFinancialQuery })
+    const response = await api.get('/payments/admin/overview', { params: compactQuery(adminFinancialQuery) })
     setAdminPayoutOverview(response.data.data)
   }, [adminFinancialQuery, isAdmin])
 
   const loadPlatformPayoutOverview = useCallback(async () => {
     if (!isPlatformAdmin) return
-    const response = await api.get('/payments/platform/overview', { params: platformFinancialQuery })
+    const response = await api.get('/payments/platform/overview', { params: compactQuery(platformFinancialQuery) })
     setPlatformPayoutOverview(response.data.data)
   }, [isPlatformAdmin, platformFinancialQuery])
 
