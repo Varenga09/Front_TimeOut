@@ -1660,6 +1660,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [productsLoading, setProductsLoading] = useState(false)
   const [productsLoadingMore, setProductsLoadingMore] = useState(false)
   const [filters, setFilters] = useState({ search: '', categoryId: '' })
+  const filtersRef = useRef(filters)
   const [userFilters, setUserFilters] = useState({ search: '', role: '', page: 1, limit: 20 })
   const [userPagination, setUserPagination] = useState({ page: 1, total: 0, totalPages: 1 })
   const [applicationPage, setApplicationPage] = useState(1)
@@ -1757,6 +1758,17 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       if (page === 1 && requestId === productListRequestRef.current) setProductsLoading(false)
     }
   }, [filters])
+
+  function updateProductFilters(next) {
+    const value = typeof next === 'function' ? next(filtersRef.current) : next
+    if (value.search === filtersRef.current.search && value.categoryId === filtersRef.current.categoryId) return
+    filtersRef.current = value
+    productListRequestRef.current += 1
+    setProductsLoading(true)
+    setProducts([])
+    setProductPagination({ page: 1, total: 0, totalPages: 1 })
+    setFilters(value)
+  }
 
   async function loadMoreProducts() {
     if (productsLoadingMore || productPagination.page >= productPagination.totalPages) return
@@ -1973,7 +1985,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   function applyRecentSearch(search) {
-    setFilters((current) => ({ ...current, search }))
+    updateProductFilters((current) => ({ ...current, search }))
     rememberSearch(search)
   }
 
@@ -2829,14 +2841,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onLoadMore={loadMoreProducts}
           categories={categories}
           filters={filters}
-          onFilter={(next) => {
-            if (next.search === filters.search && next.categoryId === filters.categoryId) return
-            productListRequestRef.current += 1
-            setProductsLoading(true)
-            setProducts([])
-            setProductPagination({ page: 1, total: 0, totalPages: 1 })
-            setFilters(next)
-          }}
+          onFilter={updateProductFilters}
           onAdd={addToCart}
           onOpen={openProduct}
           onRememberSearch={rememberSearch}
