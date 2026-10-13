@@ -5673,6 +5673,10 @@ body,
   gap: 10px;
 }
 
+.seller-shell .sidebar-nav-group:nth-child(2) {
+  order: -1;
+}
+
 .seller-shell .sidebar-nav-label {
   color: #667f98;
 }
@@ -6028,10 +6032,6 @@ body,
   padding: 18px;
 }
 
-.receivables-page .financial-history > .section-heading h3::after {
-  content: ' simulados';
-}
-
 .receivables-page .receivables-grid {
   margin-top: 10px;
 }
@@ -6095,6 +6095,38 @@ body,
   width: 100%;
 }
 
+.buyer-shell .access-page > .approval-panel:has(.application-card) .stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.access-page > .approval-columns:empty {
+  display: none;
+}
+
+.environment-request-page .environment-request-heading {
+  margin-bottom: 18px;
+}
+
+.environment-request-heading .detail-back {
+  margin-bottom: 10px;
+}
+
+.environment-request-page > .approval-columns {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.environment-request-page .approval-form-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.environment-request-page .approval-form-grid .wide-field {
+  grid-column: span 2;
+}
+
+.environment-request-page .approval-panel {
+  padding: 22px;
+}
+
 .buyer-shell .market-hero {
   min-height: 250px;
   border-radius: 8px;
@@ -6155,6 +6187,19 @@ body,
 
 .buyer-shell .content-grid.two-columns:has(.checkout-summary) .line-card {
   gap: 14px;
+}
+
+.buyer-shell .cart-line {
+  grid-template-columns: 70px minmax(0, 1fr) auto auto 38px;
+  min-height: 96px;
+}
+
+.buyer-shell .cart-line > div:nth-child(2) {
+  min-width: 0;
+}
+
+.buyer-shell .cart-line .quantity-control {
+  white-space: nowrap;
 }
 
 .notifications-page-list {
@@ -6226,6 +6271,10 @@ body,
 }
 
 @media (max-width: 850px) {
+  .environment-request-page .approval-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .profile-page,
   .seller-shell .content-grid:has(.coupon-toolbar),
   .buyer-shell .content-grid.two-columns:has(.checkout-summary) {
@@ -6256,6 +6305,35 @@ body,
 }
 
 @media (max-width: 560px) {
+  .buyer-shell .access-page > .approval-panel:has(.application-card) .stack,
+  .environment-request-page .approval-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .environment-request-page .approval-form-grid .wide-field {
+    grid-column: auto;
+  }
+
+  .buyer-shell .cart-line {
+    grid-template-columns: 58px minmax(0, 1fr) 38px;
+    gap: 10px;
+  }
+
+  .buyer-shell .cart-line > .quantity-control {
+    grid-column: 2;
+  }
+
+  .buyer-shell .cart-line > strong {
+    grid-column: 3;
+    grid-row: 2;
+    text-align: right;
+  }
+
+  .buyer-shell .cart-line > .icon-button.danger {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .coupon-toolbar {
     flex-direction: column;
   }

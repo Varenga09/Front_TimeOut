@@ -279,6 +279,23 @@ describe('Navegação e filtros da interface', () => {
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/access/notifications/1/read'))
     expect(screen.getByRole('button', { name: 'Marcar todas como lidas' })).toBeDisabled()
   })
+
+  test('abre formulário de novo ambiente em uma tela separada', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    render(createElement(App))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Solicitações', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Novo ambiente' }))
+    expect(screen.getByRole('heading', { name: 'Solicitar novo ambiente' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Responsável' })).toHaveValue('Cliente')
+    expect(screen.queryByRole('heading', { name: 'Meus ambientes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enviar para a equipe Time Out' })).toBeInTheDocument()
+  })
 })
 
 describe('Painel da equipe Time Out', () => {

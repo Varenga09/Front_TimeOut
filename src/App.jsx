@@ -2819,7 +2819,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   const allTabs = [...primaryTabs, ...sellerTabs, ...adminTabs]
   const pageTitle = productId && view === 'market' ? 'Produto' : allTabs.find(([id]) => id === view)?.[1]
-    || (view === 'profile' ? 'Meu perfil' : view === 'checkout-payment' ? 'Pagamento' : 'Time Out')
+    || (view === 'profile' ? 'Meu perfil' : view === 'new-environment' ? 'Novo ambiente' : view === 'checkout-payment' ? 'Pagamento' : 'Time Out')
 
   const navigation = (
     <nav className="sidebar-nav-groups" aria-label="Navegação principal">
@@ -2980,10 +2980,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         />
       )}
 
-      {view === 'access' && (
+      {(view === 'access' || view === 'new-environment') && (
         <AccessCenterView
           user={user}
           data={accessData}
+          environmentOnly={view === 'new-environment'}
+          onOpenEnvironment={() => navigateToView('new-environment')}
+          onBack={() => navigateToView('access')}
           onSellerApply={submitSellerApplication}
           onEnvironmentApply={submitEnvironmentApplication}
           onJoinEnvironment={joinEnvironment}
@@ -3063,6 +3066,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onJoinEnvironment={joinEnvironment}
           onSwitchEnvironment={switchEnvironment}
           onOpenAccess={() => setView('access')}
+          onOpenEnvironment={() => navigateToView('new-environment')}
         />
       )}
 
@@ -3153,7 +3157,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         </div>
       ) : null}
 
-      {canUseMarket && !productId && cartItemsCount > 0 ? (
+      {view === 'market' && canUseMarket && !productId && cartItemsCount > 0 ? (
         <button className="floating-cart" type="button" onClick={() => navigateToView('cart')}>
           <ShoppingCart size={22} />
           <span>{cartItemsCount}</span>
@@ -3262,6 +3266,7 @@ function MarketView({
           </div>
         ) : null}
 
+        <div className="section-heading market-products-heading"><h2>Destaques</h2><span>{products.length} produtos</span></div>
         <div className="product-grid">
           {products.map((product) => {
             const isOwnProduct = Number(product.seller?.id) === Number(currentUserId)
@@ -3647,10 +3652,15 @@ function RatingStars({ value, onChange }) {
 
 function NotificationsView({ notifications, onOpen, onMarkAllRead }) {
   const [filter, setFilter] = useState('all')
+  const isRequest = (item) => ['environment_application', 'seller_application', 'membership'].includes(item.resourceType)
+    || ['access', 'admin-access', 'platform-access'].includes(item.targetView)
+    || /solicita[cç][aã]o/i.test(item.title || '')
+  const isOrder = (item) => item.resourceType === 'order'
+    || ['my-orders', 'seller-orders'].includes(item.targetView)
   const filtered = notifications.filter((item) => filter === 'all'
     || (filter === 'unread' && !item.readAt)
-    || (filter === 'requests' && ['environment_application', 'seller_application', 'membership'].includes(item.resourceType))
-    || (filter === 'orders' && item.resourceType === 'order'))
+    || (filter === 'requests' && isRequest(item))
+    || (filter === 'orders' && isOrder(item)))
   const unreadCount = notifications.filter((item) => !item.readAt).length
 
   return (
@@ -3666,7 +3676,7 @@ function NotificationsView({ notifications, onOpen, onMarkAllRead }) {
       </div>
       <div className="notifications-page-list">
         {filtered.map((item) => {
-          const Icon = item.resourceType === 'order' ? ShoppingCart : item.resourceType?.includes('application') ? FileText : Bell
+          const Icon = isOrder(item) ? ShoppingCart : isRequest(item) ? FileText : Bell
           return <button key={item.id} className={item.readAt ? 'notification-row read' : 'notification-row'} type="button" onClick={() => onOpen(item)}>
             <span className="notification-row-icon"><Icon size={20} /></span>
             <span className="notification-row-copy"><strong>{item.title}</strong><span>{item.message}</span></span>
@@ -3705,7 +3715,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
             const unitPrice = getCartUnitPrice(item)
 
             return (
-              <article className="line-card" key={getCartConfigurationKey(item)}>
+              <article className="line-card cart-line" key={getCartConfigurationKey(item)}>
                 <div className="cart-item-thumb">
                   {getAssetUrl(getCartImage(item)) ? (
                     <img src={getAssetUrl(getCartImage(item))} alt={`${item.name}${item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}`} />
@@ -4059,7 +4069,7 @@ function PaymentSettingsView({ settings, overview, onSave, onConnect, query, onQ
 
       <div className="financial-history">
         <div className="section-heading">
-          <h3>Histórico de transações</h3>
+          <h3>Histórico de transações simuladas</h3>
           <span>{transactions.length} registros</span>
         </div>
         <div className="financial-table payout-history">
@@ -4727,7 +4737,7 @@ function SellerProductsView({ products, productsLoading, pagination, loadingMore
     <section className="content-grid two-columns">
       <div className="main-column">
         <div className="section-heading">
-          <h2>Meus produtos</h2>
+          <div><h2>Meus produtos</h2><p className="section-subtitle">Gerencie os produtos do seu cardápio.</p></div>
           <span>{visibleProducts.length} de {products.length} produtos</span>
         </div>
 
@@ -5032,7 +5042,7 @@ function CouponManagerView({ coupons, onSave, onToggle, onDelete }) {
     <section className="content-grid two-columns">
       <div className="main-column">
         <div className="section-heading">
-          <h2>Cupons e promoções</h2>
+          <div><h2>Cupons e promoções</h2><p className="section-subtitle">Crie e gerencie cupons de desconto para seus clientes.</p></div>
           <span>{coupons.length} cupons</span>
         </div>
 
@@ -5383,7 +5393,7 @@ function ApplicationHistory({ application }) {
   )
 }
 
-function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoinEnvironment, onSwitchEnvironment }) {
+function AccessCenterView({ user, data, environmentOnly = false, onOpenEnvironment, onBack, onSellerApply, onEnvironmentApply, onJoinEnvironment, onSwitchEnvironment }) {
   const [sellerForm, setSellerForm] = useState({
     fullName: user.name || '', cpf: '', birthDate: '', phone: user.phone || '', storeName: '',
     activityDescription: '', productCategories: '', reason: '', acceptedTerms: false, document: null,
@@ -5424,10 +5434,15 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
   }
 
   return (
-    <section className="main-column full access-page">
+    <section className={environmentOnly ? 'main-column full access-page environment-request-page' : 'main-column full access-page'}>
+      {environmentOnly ? (
+        <div className="section-heading environment-request-heading">
+          <div><button className="detail-back" type="button" onClick={onBack}><ArrowLeft size={16} /> Solicitações</button><h2>Solicitar novo ambiente</h2><p className="section-subtitle">Preencha os dados do local para análise da equipe Time Out.</p></div>
+        </div>
+      ) : (<>
       <div className="section-heading">
         <div><span className="eyebrow">Acesso e responsabilidades</span><h2>Central de solicitações</h2><p className="section-subtitle">Acompanhe decisões e envie dados para análise interna.</p></div>
-        <span className="experimental-pill"><ShieldCheck size={15} /> Verificação {data?.identityVerificationMode === 'mock' ? 'de teste' : 'ativa'}</span>
+        <div className="heading-actions"><span className="experimental-pill"><ShieldCheck size={15} /> Verificação {data?.identityVerificationMode === 'mock' ? 'de teste' : 'ativa'}</span>{user.role !== 'platform_admin' ? <button className="ghost-button" type="button" onClick={onOpenEnvironment}><Plus size={16} /> Novo ambiente</button> : null}</div>
       </div>
 
       {!(user.memberships || []).some((membership) => Number(membership.environmentId) === Number(user.environmentId) && membership.status === 'approved' && membership.environment?.status === 'active') && (
@@ -5442,9 +5457,10 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
           <div className="inline-access-form"><input value={accessCode} onChange={(event) => setAccessCode(event.target.value)} placeholder="Código de acesso" /><button className="primary-button" type="button" disabled={!accessCode.trim()} onClick={() => onJoinEnvironment(accessCode)}><ArrowRight size={17} /> Solicitar entrada</button></div>
         </article>
       )}
+      </>)}
 
       <div className="approval-columns">
-        {user.environmentId && user.role === 'customer' ? (
+        {!environmentOnly && user.environmentId && user.role === 'customer' ? (
           <form className="approval-panel" onSubmit={submitSeller}>
             <PanelHeader icon={Store} title="Solicitar perfil de vendedor" />
             <div className="approval-form-grid">
@@ -5464,9 +5480,9 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
           </form>
         ) : null}
 
-        {user.role !== 'platform_admin' ? (
+        {environmentOnly && user.role !== 'platform_admin' ? (
           <form className="approval-panel" onSubmit={submitEnvironment}>
-            <PanelHeader icon={Building2} title="Solicitar novo ambiente" />
+            <PanelHeader icon={Building2} title="Dados do ambiente" />
             <div className="approval-form-grid">
               <label>Responsável<input required value={environmentForm.responsibleName} onChange={(event) => setEnvironmentForm({ ...environmentForm, responsibleName: event.target.value })} /></label>
               <label>CPF<input required value={environmentForm.cpf} onChange={(event) => setEnvironmentForm({ ...environmentForm, cpf: event.target.value })} /></label>
@@ -5485,10 +5501,10 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
         ) : null}
       </div>
 
-      <div className="approval-columns">
+      {!environmentOnly ? <div className="approval-columns">
         <ApplicationList title="Solicitações de vendedor" applications={sellerApplications} />
         <ApplicationList title="Solicitações de ambiente" applications={environmentApplications} />
-      </div>
+      </div> : null}
     </section>
   )
 }
@@ -5777,6 +5793,7 @@ function ProfileView({
   onJoinEnvironment,
   onSwitchEnvironment,
   onOpenAccess,
+  onOpenEnvironment,
 }) {
   const [environmentCode, setEnvironmentCode] = useState('')
   const [form, setForm] = useState({
@@ -5834,10 +5851,7 @@ function ProfileView({
               <MailCheck size={15} />
               {user.emailVerifiedAt ? 'E-mail confirmado' : 'E-mail pendente'}
             </span>
-            <span>
-              <Phone size={15} />
-              {phoneStatusLabel(user)}
-            </span>
+            {user.phone ? <span><Phone size={15} /> {phoneStatusLabel(user)}</span> : null}
             {user.role !== 'customer' ? (
               <span>
                 <IdCard size={15} />
@@ -5919,7 +5933,7 @@ function ProfileView({
         <div className="detail-section create-place-panel">
           <PanelHeader icon={FileText} title="Novo ambiente" />
           <p>A criação de ambientes passa por análise da equipe Time Out.</p>
-          <button className="ghost-button wide" type="button" onClick={onOpenAccess}>
+          <button className="ghost-button wide" type="button" onClick={onOpenEnvironment}>
             <FileText size={17} /> Abrir formulário de solicitação
           </button>
         </div>
