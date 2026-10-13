@@ -468,6 +468,7 @@ function toFormData(data, fileField, file) {
 }
 
 function formatDate(value) {
+  if (!value || Number.isNaN(new Date(value).getTime())) return 'Não informado'
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -671,10 +672,6 @@ function LoginScreen({ onSession, onNotice, notice }) {
       errors.name = 'Nome é obrigatório'
     }
     
-    if (mode === 'register' && !form.environmentAccessCode) {
-      errors.environmentAccessCode = 'Código do ambiente é obrigatório'
-    }
-    
     if (mode === 'register' && form.phone && !isValidPhone(form.phone)) {
       errors.phone = 'Telefone inválido'
     }
@@ -744,7 +741,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
           email: form.email,
           password: form.password,
           phone: form.phone ? formatPhone(form.phone) : undefined,
-          environmentAccessCode: form.environmentAccessCode,
+          environmentAccessCode: form.environmentAccessCode.trim() || undefined,
         })
         onNotice('Cadastro realizado com sucesso! Faça login para continuar.')
         setMode('login')
@@ -1026,7 +1023,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
               </div>
               
               <div className="form-field">
-                <label htmlFor="environmentAccessCode">Código do ambiente</label>
+                <label htmlFor="environmentAccessCode">Código do ambiente (opcional)</label>
                 <div className="input-wrapper">
                   <Hash className="input-icon" size={18} />
                   <input
@@ -1034,7 +1031,6 @@ function LoginScreen({ onSession, onNotice, notice }) {
                     value={form.environmentAccessCode}
                     onChange={(event) => setForm({ ...form, environmentAccessCode: event.target.value })}
                     placeholder="Ex: SENAI2026"
-                    required
                     className={formErrors.environmentAccessCode ? 'error' : ''}
                   />
                 </div>
@@ -1495,6 +1491,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [orders, setOrders] = useState([])
   const [sellerOrders, setSellerOrders] = useState([])
   const [users, setUsers] = useState([])
+  const [accountDetail, setAccountDetail] = useState(null)
   const [coupons, setCoupons] = useState([])
   const [paymentSettings, setPaymentSettings] = useState(null)
   const [sellerPaymentSettings, setSellerPaymentSettings] = useState(defaultPaymentSettings)
@@ -1520,7 +1517,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [loading, setLoading] = useState(false)
   const [filters, setFilters] = useState({ search: '', categoryId: '' })
-  const [userFilters, setUserFilters] = useState({ search: '', role: '' })
+  const [userFilters, setUserFilters] = useState({ search: '', role: '', page: 1, limit: 20 })
+  const [userPagination, setUserPagination] = useState({ page: 1, total: 0, totalPages: 1 })
+  const [applicationPage, setApplicationPage] = useState(1)
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
       return JSON.parse(readCompatibleStorage(
@@ -1558,6 +1557,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }, [])
   const isEnvironmentAdmin = ['admin', 'environment_admin'].includes(user.role)
   const isPlatformAdmin = user.role === 'platform_admin'
+  const activeMembership = user.memberships?.find((membership) => Number(membership.environmentId) === Number(user.environmentId))
+  const canUseMarket = Boolean(user.environmentId && activeMembership?.status === 'approved' && activeMembership?.environment?.status === 'active' && !user.isSuspended)
   const isSeller = user.role === 'seller' || isEnvironmentAdmin
   const isApprovedSeller = user.role === 'seller'
   const isAdmin = isEnvironmentAdmin
@@ -1587,15 +1588,18 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }, [])
 
   const loadUsers = useCallback(async () => {
-    if (!isAdmin) return
+    if (!isAdmin && !isPlatformAdmin) return
 
     const params = {}
     if (userFilters.search) params.search = userFilters.search
     if (userFilters.role) params.role = userFilters.role
+    params.page = userFilters.page
+    params.limit = userFilters.limit
 
-    const response = await api.get('/users', { params })
+    const response = await api.get('/access/admin/accounts', { params })
     setUsers(response.data.data.users)
-  }, [isAdmin, userFilters])
+    setUserPagination(response.data.data)
+  }, [isAdmin, isPlatformAdmin, userFilters])
 
   const loadCoupons = useCallback(async () => {
     if (!isSeller) return
@@ -1660,18 +1664,19 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       setEnvironmentAccess(response.data.data)
     }
     if (isPlatformAdmin) {
-      const response = await api.get('/access/platform')
+      const response = await api.get('/access/platform', { params: { page: applicationPage, limit: 20 } })
       setPlatformAccess(response.data.data)
     }
-  }, [isEnvironmentAdmin, isPlatformAdmin])
+  }, [applicationPage, isEnvironmentAdmin, isPlatformAdmin])
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      if (isPlatformAdmin || !user.environmentId) {
+      if (!canUseMarket) {
         await Promise.all([
           loadAccessData(),
           isPlatformAdmin ? loadPlatformPayoutOverview() : Promise.resolve(),
+          isPlatformAdmin || isAdmin ? loadUsers() : Promise.resolve(),
         ])
         return
       }
@@ -1689,13 +1694,15 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         isAdmin ? loadAdminMonetization() : Promise.resolve(),
         isAdmin ? loadAdminPayoutOverview() : Promise.resolve(),
         loadAccessData(),
+        isPlatformAdmin ? loadPlatformPayoutOverview() : Promise.resolve(),
+        isPlatformAdmin ? loadUsers() : Promise.resolve(),
       ])
     } catch (error) {
       onNotice(getErrorMessage(error))
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, isApprovedSeller, isPlatformAdmin, isSeller, loadAccessData, loadAdminMonetization, loadAdminPayoutOverview, loadCategories, loadCoupons, loadEnvironments, loadFinancialOverview, loadOrders, loadPaymentSettings, loadPlans, loadPlatformPayoutOverview, loadProducts, loadSellerOrders, loadUsers, onNotice, user.environmentId])
+  }, [canUseMarket, isAdmin, isApprovedSeller, isPlatformAdmin, isSeller, loadAccessData, loadAdminMonetization, loadAdminPayoutOverview, loadCategories, loadCoupons, loadEnvironments, loadFinancialOverview, loadOrders, loadPaymentSettings, loadPlans, loadPlatformPayoutOverview, loadProducts, loadSellerOrders, loadUsers, onNotice])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1769,6 +1776,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   function canAddProduct(product, replaceCart = false) {
+    if (!canUseMarket) {
+      setView('access')
+      onNotice('Entre em um ambiente ativo e aguarde a aprovação para comprar')
+      return false
+    }
     if (Number(product.seller?.id || product.userId) === Number(user.id)) {
       onNotice('Você não pode comprar seu próprio produto')
       return false
@@ -1874,6 +1886,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   async function createOrder(formData) {
+    if (!canUseMarket) {
+      setView('access')
+      onNotice('Sua participação precisa estar aprovada para comprar')
+      return
+    }
     if (cart.length === 0) {
       onNotice('Adicione produtos ao carrinho')
       return
@@ -2110,14 +2127,29 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   }
 
-  async function deleteUser(userId) {
+  async function openAccount(userId) {
     try {
-      await api.delete(`/users/${userId}`)
-      onNotice('Usuário removido')
-      await refresh()
+      const response = await api.get(`/access/admin/accounts/${userId}`)
+      setAccountDetail(response.data.data)
     } catch (error) {
       onNotice(getErrorMessage(error))
     }
+  }
+
+  async function manageAccount(action, payload) {
+    if (!accountDetail?.user?.id) return
+    const id = accountDetail.user.id
+    try {
+      if (action === 'profile') await api.patch(`/access/admin/accounts/${id}/profile`, payload)
+      if (action === 'status') await api.patch(`/access/admin/accounts/${id}/status`, payload)
+      if (action === 'sessions') await api.post(`/access/admin/accounts/${id}/sessions/invalidate`, payload)
+      if (action === 'email') await api.post(`/access/admin/accounts/${id}/email/reverify`, payload)
+      const response = await api.get(`/access/admin/accounts/${id}`)
+      setAccountDetail(response.data.data)
+      onNotice('Conta atualizada')
+      await refresh()
+      return true
+    } catch (error) { onNotice(getErrorMessage(error)); return false }
   }
 
   async function changeMyPlan(planCode) {
@@ -2144,18 +2176,20 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       await api.patch(`/access/environment-admin/seller-applications/${applicationId}`, {
         status: action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : action,
-        reason: reason || (action === 'reject' ? 'Solicitação recusada pelo administrador do ambiente.' : undefined),
+        reason,
       })
       onNotice(action === 'approve' ? 'Vendedor aprovado no plano Básico' : 'Solicitação atualizada')
       await refresh()
+      return true
     } catch (error) {
       onNotice(getErrorMessage(error))
+      return false
     }
   }
 
   async function submitSellerApplication(payload) {
     try {
-      await api.post('/access/seller-applications', payload)
+      await api.post('/access/seller-applications', payload, { headers: { 'Content-Type': 'multipart/form-data' } })
       onNotice('Solicitação de vendedor enviada para análise')
       await refresh()
       return true
@@ -2171,12 +2205,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     } catch (error) { onNotice(getErrorMessage(error)); return false }
   }
 
-  async function reviewMembership(id, status) {
+  async function reviewMembership(id, status, reason = '') {
     try {
-      await api.patch(`/access/environment-admin/memberships/${id}`, { status })
+      await api.patch(`/access/environment-admin/memberships/${id}`, { status, reason })
       onNotice('Participação atualizada')
       await refresh()
-    } catch (error) { onNotice(getErrorMessage(error)) }
+      return true
+    } catch (error) { onNotice(getErrorMessage(error)); return false }
   }
 
   async function rotateEnvironmentCode() {
@@ -2201,36 +2236,58 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       const code = response.data.data.generatedCode
       onNotice(code ? `Ambiente aprovado. Código inicial: ${code}` : 'Solicitação atualizada')
       await refresh()
-    } catch (error) { onNotice(getErrorMessage(error)) }
+      return true
+    } catch (error) { onNotice(getErrorMessage(error)); return false }
   }
 
-  async function toggleEnvironmentStatus(id, suspended) {
+  async function toggleEnvironmentStatus(id, suspended, reason) {
     try {
-      await api.patch(`/access/platform/environments/${id}/status`, { suspended })
+      await api.patch(`/access/platform/environments/${id}/status`, { suspended, reason })
       onNotice(suspended ? 'Ambiente suspenso' : 'Ambiente reativado')
       await refresh()
-    } catch (error) { onNotice(getErrorMessage(error)) }
+      return true
+    } catch (error) { onNotice(getErrorMessage(error)); return false }
   }
 
-  async function transferEnvironment(id, userId) {
+  async function transferEnvironment(id, userId, reason) {
     try {
-      await api.patch(`/access/platform/environments/${id}/transfer`, { userId: Number(userId) })
+      await api.patch(`/access/platform/environments/${id}/transfer`, { userId: Number(userId), reason })
       onNotice('Responsável pelo ambiente atualizado')
       await refresh()
-    } catch (error) { onNotice(getErrorMessage(error)) }
+      return true
+    } catch (error) { onNotice(getErrorMessage(error)); return false }
   }
 
-  async function toggleAdministratorStatus(id, suspended) {
+  async function toggleAdministratorStatus(id, suspended, reason) {
     try {
-      await api.patch(`/access/platform/administrators/${id}/status`, { suspended })
+      await api.patch(`/access/platform/administrators/${id}/status`, { suspended, reason })
       onNotice(suspended ? 'Administrador suspenso' : 'Administrador reativado')
       await refresh()
+      return true
+    } catch (error) { onNotice(getErrorMessage(error)); return false }
+  }
+
+  async function viewApplicationDocument(id, reason) {
+    try {
+      const response = await api.get(`/access/platform/environment-applications/${id}/document`, { params: { reason }, responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (error) { onNotice(getErrorMessage(error)) }
   }
 
-  async function viewApplicationDocument(id) {
+  async function viewSellerDocument(id, reason) {
     try {
-      const response = await api.get(`/access/platform/environment-applications/${id}/document`, { responseType: 'blob' })
+      const response = await api.get(`/access/environment-admin/seller-applications/${id}/document`, { params: { reason }, responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (error) { onNotice(getErrorMessage(error)) }
+  }
+
+  async function viewPlatformSellerDocument(id, reason) {
+    try {
+      const response = await api.get(`/access/platform/seller-applications/${id}/document`, { params: { reason }, responseType: 'blob' })
       const url = URL.createObjectURL(response.data)
       window.open(url, '_blank', 'noopener,noreferrer')
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
@@ -2244,11 +2301,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     } catch (error) { onNotice(getErrorMessage(error)) }
   }
 
-  async function revealApplicationCpf(type, id) {
+  async function revealApplicationCpf(type, id, reason) {
     try {
-      const response = await api.get(`/access/applications/${type}/${id}/cpf`)
-      onNotice(`CPF verificado: ${response.data.data.cpf}`)
-    } catch (error) { onNotice(getErrorMessage(error)) }
+      const response = await api.get(`/access/applications/${type}/${id}/cpf`, { params: { reason } })
+      return response.data.data.cpf
+    } catch (error) { onNotice(getErrorMessage(error)); return null }
   }
 
   async function saveInstitutionalConfig(payload) {
@@ -2287,9 +2344,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   }
 
-  const primaryTabs = isPlatformAdmin
-    ? []
-    : user.environmentId
+  const primaryTabs = canUseMarket
       ? [
           ['market', 'Vitrine', ShoppingBag],
           ['cart', `Carrinho (${cartItemsCount})`, ShoppingCart],
@@ -2321,6 +2376,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   if (isPlatformAdmin) {
     adminTabs.push(['platform-access', 'Equipe Time Out', ShieldCheck])
+    adminTabs.push(['admin-users', 'Contas', UsersRound])
   }
 
   const allTabs = [...primaryTabs, ...sellerTabs, ...adminTabs]
@@ -2398,12 +2454,12 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       pageTitle={pageTitle}
       cartItemsCount={cartItemsCount}
       cartTotal={cartTotal}
-      onCartClick={!isPlatformAdmin && user.environmentId ? () => setView('cart') : null}
+      onCartClick={canUseMarket ? () => setView('cart') : null}
       notifications={notifications}
       onNotificationRead={markNotificationRead}
     >
 
-      {view === 'market' && (
+      {view === 'market' && canUseMarket && (
         <MarketView
           products={products}
           categories={categories}
@@ -2418,7 +2474,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         />
       )}
 
-      {view === 'cart' && (
+      {view === 'cart' && canUseMarket && (
         <CartView
           cart={cart}
           total={cartTotal}
@@ -2455,10 +2511,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onSellerApply={submitSellerApplication}
           onEnvironmentApply={submitEnvironmentApplication}
           onJoinEnvironment={joinEnvironment}
+          onSwitchEnvironment={switchEnvironment}
         />
       )}
 
-      {view === 'my-orders' && (
+      {view === 'my-orders' && canUseMarket && (
         <OrdersView orders={orders} mode="customer" onCancel={cancelOrder} title="Histórico de compras" />
       )}
 
@@ -2527,12 +2584,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       {view === 'admin-users' && (
         <AdminUsersView
           users={users}
+          pagination={userPagination}
+          isPlatformAdmin={isPlatformAdmin}
           currentUserId={user.id}
           filters={userFilters}
           onFilter={setUserFilters}
-          onDelete={deleteUser}
+          onManage={openAccount}
         />
       )}
+
+      {accountDetail && <AccountManagementDialog data={accountDetail} currentUserId={user.id} onClose={() => setAccountDetail(null)} onAction={manageAccount} />}
 
       {view === 'admin-categories' && (
         <AdminCategoriesView
@@ -2572,20 +2633,26 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onReviewMembership={reviewMembership}
           onRotateCode={rotateEnvironmentCode}
           onToggleCode={toggleEnvironmentCode}
-          onRevealCpf={(id) => revealApplicationCpf('seller', id)}
+          onRevealCpf={(id, reason) => revealApplicationCpf('seller', id, reason)}
+          onViewDocument={viewSellerDocument}
+          onNotice={onNotice}
         />
       )}
 
       {view === 'platform-access' && (
         <PlatformAccessView
           data={platformAccess}
+          onApplicationPage={setApplicationPage}
           payoutOverview={platformPayoutOverview}
           onReviewApplication={reviewEnvironmentApplication}
           onToggleEnvironment={toggleEnvironmentStatus}
           onTransferEnvironment={transferEnvironment}
           onToggleAdministrator={toggleAdministratorStatus}
           onViewDocument={viewApplicationDocument}
-          onRevealCpf={(id) => revealApplicationCpf('environment', id)}
+          onViewSellerDocument={viewPlatformSellerDocument}
+          onRevealCpf={(id, reason) => revealApplicationCpf('environment', id, reason)}
+          onRevealSellerCpf={(id, reason) => revealApplicationCpf('seller', id, reason)}
+          onNotice={onNotice}
           financialQuery={platformFinancialQuery}
           onFinancialQuery={setPlatformFinancialQuery}
           onRetrySettlement={retrySettlement}
@@ -2599,7 +2666,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         </div>
       ) : null}
 
-      {cartItemsCount > 0 ? (
+      {canUseMarket && cartItemsCount > 0 ? (
         <button className="floating-cart" type="button" onClick={() => setView('cart')}>
           <ShoppingCart size={22} />
           <span>{cartItemsCount}</span>
@@ -4557,10 +4624,10 @@ function ApplicationHistory({ application }) {
   )
 }
 
-function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoinEnvironment }) {
+function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoinEnvironment, onSwitchEnvironment }) {
   const [sellerForm, setSellerForm] = useState({
     fullName: user.name || '', cpf: '', birthDate: '', phone: user.phone || '', storeName: '',
-    activityDescription: '', productCategories: '', reason: '', acceptedTerms: false,
+    activityDescription: '', productCategories: '', reason: '', acceptedTerms: false, document: null,
   })
   const [environmentForm, setEnvironmentForm] = useState({
     responsibleName: user.name || '', cpf: '', phone: user.phone || '', institutionName: '',
@@ -4577,8 +4644,12 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
 
   async function submitSeller(event) {
     event.preventDefault()
+    const formData = new FormData()
+    Object.entries(sellerForm).forEach(([key, value]) => {
+      if (value !== '' && value !== null) formData.append(key, value)
+    })
     setSubmitting(true)
-    await onSellerApply({ ...sellerForm, productCategories: sellerForm.productCategories.split(',').map((item) => item.trim()).filter(Boolean) })
+    await onSellerApply(formData)
     setSubmitting(false)
   }
 
@@ -4600,12 +4671,18 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
         <span className="experimental-pill"><ShieldCheck size={15} /> Verificação {data?.identityVerificationMode === 'mock' ? 'de teste' : 'ativa'}</span>
       </div>
 
-      {!user.environmentId ? (
+      {!(user.memberships || []).some((membership) => Number(membership.environmentId) === Number(user.environmentId) && membership.status === 'approved' && membership.environment?.status === 'active') && (
+        <p className="access-required-banner"><Lock size={17} /> Entre em um ambiente ativo e aguarde a aprovação antes de acessar a vitrine ou comprar.</p>
+      )}
+
+      {(user.memberships || []).length > 0 && <article className="approval-panel"><PanelHeader icon={Building2} title="Meus ambientes" /><div className="stack">{user.memberships.map((membership) => <div className="application-card" key={membership.id}><div><strong>{membership.environment?.name || `Ambiente #${membership.environmentId}`}</strong><span className={`status-badge ${membership.status}`}>{accessStatusLabels[membership.status] || membership.status}</span></div><p>{roleLabel(membership.role)} · {membership.environment?.status === 'suspended' ? 'Ambiente suspenso' : 'Ambiente ativo'}</p><button className="ghost-button" type="button" disabled={membership.status !== 'approved' || membership.environment?.status !== 'active' || Number(membership.environmentId) === Number(user.environmentId)} onClick={() => onSwitchEnvironment(membership.environmentId)}>Usar ambiente</button></div>)}</div></article>}
+
+      {(
         <article className="approval-panel">
-          <PanelHeader icon={KeyRound} title="Entrar em um ambiente" />
+          <PanelHeader icon={KeyRound} title="Entrar em outro ambiente" />
           <div className="inline-access-form"><input value={accessCode} onChange={(event) => setAccessCode(event.target.value)} placeholder="Código de acesso" /><button className="primary-button" type="button" disabled={!accessCode.trim()} onClick={() => onJoinEnvironment(accessCode)}><ArrowRight size={17} /> Solicitar entrada</button></div>
         </article>
-      ) : null}
+      )}
 
       <div className="approval-columns">
         {user.environmentId && user.role === 'customer' ? (
@@ -4619,6 +4696,7 @@ function AccessCenterView({ user, data, onSellerApply, onEnvironmentApply, onJoi
               <label>Nome da loja<input required value={sellerForm.storeName} onChange={(event) => setSellerForm({ ...sellerForm, storeName: event.target.value })} /></label>
               <label>Categorias<input required value={sellerForm.productCategories} onChange={(event) => setSellerForm({ ...sellerForm, productCategories: event.target.value })} placeholder="Salgados, bebidas" /></label>
               <label className="wide-field">Atividade<textarea required minLength={10} value={sellerForm.activityDescription} onChange={(event) => setSellerForm({ ...sellerForm, activityDescription: event.target.value })} /></label>
+              <label>Documento opcional<input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setSellerForm({ ...sellerForm, document: event.target.files?.[0] || null })} /></label>
               <label className="wide-field">Por que deseja vender?<textarea required minLength={10} value={sellerForm.reason} onChange={(event) => setSellerForm({ ...sellerForm, reason: event.target.value })} /></label>
             </div>
             <label className="checkbox-row"><input type="checkbox" checked={sellerForm.acceptedTerms} onChange={(event) => setSellerForm({ ...sellerForm, acceptedTerms: event.target.checked })} /> Confirmo que os dados são verdadeiros e aceito os termos.</label>
@@ -4675,34 +4753,83 @@ function ApplicationList({ title, applications }) {
   )
 }
 
-function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, onRotateCode, onToggleCode, onRevealCpf }) {
-  const [reason, setReason] = useState('')
+function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, onRotateCode, onToggleCode, onRevealCpf, onViewDocument, onNotice }) {
+  const [pendingAction, setPendingAction] = useState(null)
+  const [regularity, setRegularity] = useState(null)
+  const [revealedCpf, setRevealedCpf] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  async function openRegularity(userId) {
+    setDetailLoading(true)
+    try {
+      const response = await api.get(`/access/environment-admin/sellers/${userId}/regularity`)
+      setRegularity(response.data.data)
+      setRevealedCpf(null)
+    } catch (error) { onNotice(getErrorMessage(error)) } finally { setDetailLoading(false) }
+  }
+  function ask(title, description, run, reasonRequired = true) {
+    setPendingAction({ title, description, reasonRequired, run: async (reason) => {
+      const result = await run(reason)
+      if (result !== false && !['Revelar CPF', 'Abrir documento'].includes(title)) setRegularity(null)
+      return result
+    } })
+  }
   if (!data) return <EmptyState text="Carregando aprovações..." />
-  const pendingMemberships = (data.memberships || []).filter((item) => item.status !== 'approved')
+  const managedMemberships = (data.memberships || []).filter((item) => !['admin', 'environment_admin'].includes(item.role))
   return (
     <section className="main-column full access-page">
       <div className="section-heading"><div><span className="eyebrow">Administrador do ambiente</span><h2>Acessos e aprovações</h2></div><span className="experimental-pill"><ShieldCheck size={15} /> {data.identityVerificationMode === 'mock' ? 'Ambiente de teste: validações externas estão desativadas.' : 'Fluxo interno'}</span></div>
       <article className="approval-panel code-management">
         <div><PanelHeader icon={KeyRound} title="Código de acesso" /><p>Código atual: <strong>{data.accessCode?.codePreview || 'Prévia indisponível'}</strong></p></div>
-        <div className="row-actions"><button className="ghost-button" type="button" onClick={onRotateCode}><RefreshCcw size={16} /> Gerar novo</button>{data.environment?.accessCodeEnabled ? <button className="ghost-button" type="button" onClick={() => onToggleCode(false)}><Lock size={16} /> Desativar</button> : <button className="ghost-button" type="button" onClick={() => onToggleCode(true)}><Check size={16} /> Ativar</button>}</div>
+        <div className="row-actions"><button className="ghost-button" type="button" onClick={() => ask('Trocar código', 'O código anterior deixará de funcionar.', onRotateCode, false)}><RefreshCcw size={16} /> Gerar novo</button>{data.environment?.accessCodeEnabled ? <button className="ghost-button" type="button" onClick={() => ask('Desativar código', 'Novas entradas serão bloqueadas.', () => onToggleCode(false), false)}><Lock size={16} /> Desativar</button> : <button className="ghost-button" type="button" onClick={() => onToggleCode(true)}><Check size={16} /> Ativar</button>}</div>
       </article>
-      <label className="decision-reason">Justificativa para correção, recusa ou suspensão<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explique a decisão para o solicitante" /></label>
       <div className="approval-columns">
         <article className="approval-panel"><div className="section-heading compact-heading"><h3>Vendedores</h3><span>{data.sellerApplications?.length || 0}</span></div><div className="stack">
-          {(data.sellerApplications || []).map((application) => <div className="application-card" key={application.id}><div><strong>{application.fullName || application.user?.name}</strong><span className={`status-badge ${application.status}`}>{accessStatusLabels[application.status]}</span></div><p>{application.storeName} · CPF protegido</p><p>{application.activityDescription}</p><div className="row-actions"><button className="ghost-button" type="button" onClick={() => onRevealCpf(application.id)}><Eye size={15} /> Ver CPF</button><button className="primary-button compact-button" type="button" onClick={() => onReviewSeller(application.id, 'approve')}><Check size={15} /> {application.status === 'suspended' ? 'Reativar' : 'Aprovar'}</button><button className="ghost-button" type="button" onClick={() => onReviewSeller(application.id, 'changes_requested', reason)}>Corrigir</button>{application.status !== 'suspended' ? <button className="ghost-button danger-text" type="button" onClick={() => onReviewSeller(application.id, application.status === 'approved' ? 'suspended' : 'reject', reason)}><Ban size={15} /> {application.status === 'approved' ? 'Suspender' : 'Recusar'}</button> : null}</div><ApplicationHistory application={application} /></div>)}
+          {(data.sellerApplications || []).map((application) => <div className="application-card" key={application.id}><div><strong>{application.fullName || application.user?.name}</strong><span className={`status-badge ${application.status}`}>{accessStatusLabels[application.status] || application.status}</span></div><p>{application.storeName} · {application.user?.email}</p><p>{application.activityDescription}</p><button className="ghost-button" type="button" disabled={detailLoading} onClick={() => openRegularity(application.userId)}><Eye size={15} /> Regularidade do vendedor</button></div>)}
         </div></article>
-        <article className="approval-panel"><div className="section-heading compact-heading"><h3>Entradas no ambiente</h3><span>{pendingMemberships.length}</span></div><div className="stack">
-          {pendingMemberships.map((membership) => <div className="application-card" key={membership.id}><div><strong>{membership.user?.name}</strong><span className={`status-badge ${membership.status}`}>{accessStatusLabels[membership.status]}</span></div><p>{membership.user?.email} · {membership.user?.phone || 'Sem telefone'}</p><div className="row-actions"><button className="primary-button compact-button" type="button" onClick={() => onReviewMembership(membership.id, 'approved')}><Check size={15} /> Aprovar</button><button className="ghost-button danger-text" type="button" onClick={() => onReviewMembership(membership.id, membership.status === 'suspended' ? 'approved' : 'suspended')}>{membership.status === 'suspended' ? 'Reativar' : 'Suspender'}</button></div></div>)}
-          {pendingMemberships.length === 0 ? <EmptyState text="Nenhuma entrada pendente." /> : null}
+        <article className="approval-panel"><div className="section-heading compact-heading"><h3>Entradas no ambiente</h3><span>{managedMemberships.length}</span></div><div className="stack">
+          {managedMemberships.map((membership) => <div className="application-card" key={membership.id}><div><strong>{membership.user?.name}</strong><span className={`status-badge ${membership.status}`}>{accessStatusLabels[membership.status]}</span></div><p>{membership.user?.email} · {membership.user?.phone || 'Sem telefone'}</p><div className="row-actions">{membership.status !== 'approved' && <button className="primary-button compact-button" type="button" onClick={() => ask('Aprovar participação', `Permitir entrada de ${membership.user?.name}?`, () => onReviewMembership(membership.id, 'approved'), false)}><Check size={15} /> Aprovar</button>}{membership.status === 'approved' && <button className="ghost-button danger-text" type="button" onClick={() => ask('Suspender participação', `Suspender a entrada de ${membership.user?.name}?`, (reason) => onReviewMembership(membership.id, 'suspended', reason))}>Suspender</button>}{membership.status === 'pending' && <button className="ghost-button danger-text" type="button" onClick={() => ask('Recusar participação', `Recusar a entrada de ${membership.user?.name}?`, (reason) => onReviewMembership(membership.id, 'rejected', reason))}>Recusar</button>}</div></div>)}
+          {managedMemberships.length === 0 ? <EmptyState text="Nenhuma participação registrada." /> : null}
         </div></article>
       </div>
+      {regularity && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRegularity(null) }}><div className="administrative-dialog wide-dialog" role="dialog" aria-modal="true" aria-label="Regularidade do vendedor"><div className="section-heading compact-heading"><div><h3>Regularidade do vendedor</h3><span>{regularity.user?.name} · {regularity.user?.email}</span></div><button className="icon-button" type="button" title="Fechar" onClick={() => setRegularity(null)}><X size={18} /></button></div><p><strong>Situação:</strong> {regularity.status} · {regularity.decisionReason || 'Sem ressalvas internas'}</p><div className="administrative-detail-grid"><p><strong>Telefone:</strong> {regularity.user?.phone || 'Não informado'}</p><p><strong>CPF:</strong> {revealedCpf || regularity.user?.cpfMasked || 'Não informado'}</p><p><strong>E-mail:</strong> {regularity.user?.emailVerifiedAt ? 'Confirmado' : 'Pendente'}</p><p><strong>Ambiente:</strong> {regularity.environment?.name} · {regularity.membership?.status}</p><p><strong>Loja:</strong> {regularity.application?.storeName}</p><p><strong>Solicitação:</strong> {formatDate(regularity.application?.requestedAt)}</p><p><strong>Aprovado em:</strong> {regularity.application?.status === 'approved' ? formatDate(regularity.application?.reviewedAt) : 'Não aprovado'}</p><p><strong>Responsável:</strong> {regularity.application?.reviewer?.name || 'Não definido'}</p><p><strong>Produtos:</strong> {regularity.products?.active} ativos · {regularity.products?.inactive} inativos</p><p><strong>Pedidos:</strong> {regularity.orders?.total} recebidos · {regularity.orders?.delivered} entregues · {regularity.orders?.canceled} cancelados · {regularity.orders?.refused} recusados</p><p><strong>Recebimento simulado:</strong> {regularity.payoutAccount?.status || 'Não conectado'}</p><p><strong>Validação:</strong> CPF matemático e aprovação interna; verificação externa não realizada.</p></div><div className="row-actions"><button className="ghost-button" type="button" onClick={() => ask('Revelar CPF', 'O acesso será auditado.', async (reason) => setRevealedCpf(await onRevealCpf(regularity.application.id, reason)))}><Eye size={15} /> Revelar CPF</button>{regularity.documentAvailable && <button className="ghost-button" type="button" onClick={() => ask('Abrir documento', 'O acesso será auditado.', (reason) => onViewDocument(regularity.application.id, reason))}><FileText size={15} /> Documento</button>}<button className="primary-button compact-button" type="button" onClick={() => ask('Marcar como regular', 'Aprovar ou reativar este vendedor?', () => onReviewSeller(regularity.application.id, 'approved'), false)}><Check size={15} /> Regular</button><button className="ghost-button" type="button" onClick={() => ask('Solicitar correção', 'A pessoa receberá a justificativa.', (reason) => onReviewSeller(regularity.application.id, 'changes_requested', reason))}>Solicitar correção</button><button className="ghost-button danger-text" type="button" onClick={() => ask('Marcar como irregular', 'Novos produtos e pedidos serão bloqueados.', (reason) => onReviewSeller(regularity.application.id, 'blocked', reason))}><Ban size={15} /> Irregular</button><button className="ghost-button danger-text" type="button" onClick={() => ask('Suspender vendedor', 'Novos produtos e pedidos serão bloqueados.', (reason) => onReviewSeller(regularity.application.id, 'suspended', reason))}>Suspender</button>{!['approved', 'suspended', 'blocked'].includes(regularity.application.status) && <button className="ghost-button danger-text" type="button" onClick={() => ask('Recusar solicitação', 'A pessoa receberá a justificativa.', (reason) => onReviewSeller(regularity.application.id, 'rejected', reason))}>Recusar</button>}</div><h4>Histórico de decisões</h4><ApplicationHistory application={regularity.application} /><div className="audit-list">{(regularity.decisions || []).map((log) => <div key={log.id}><strong>{log.summary}</strong><span>{formatDate(log.createdAt)}</span></div>)}</div></div></div>}
+      {pendingAction && <AdministrativeConfirmDialog title={pendingAction.title} description={pendingAction.description} reasonRequired={pendingAction.reasonRequired} onConfirm={pendingAction.run} onClose={() => setPendingAction(null)} />}
     </section>
   )
 }
 
-function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onRevealCpf, financialQuery, onFinancialQuery, onRetrySettlement }) {
-  const [reason, setReason] = useState('')
+function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onViewSellerDocument, onRevealCpf, onRevealSellerCpf, onNotice, onApplicationPage, financialQuery, onFinancialQuery, onRetrySettlement }) {
   const [transfers, setTransfers] = useState({})
+  const [pendingAction, setPendingAction] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [revealedCpf, setRevealedCpf] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [sellerDetail, setSellerDetail] = useState(null)
+  async function openDetail(id) {
+    setDetailLoading(true)
+    try {
+      const response = await api.get(`/access/platform/environment-applications/${id}`)
+      setDetail(response.data.data)
+      setRevealedCpf(null)
+    } catch (error) { onNotice(getErrorMessage(error)) } finally { setDetailLoading(false) }
+  }
+  async function openSellerDetail(id) {
+    setDetailLoading(true)
+    try {
+      const response = await api.get(`/access/platform/sellers/${id}/regularity`)
+      setSellerDetail(response.data.data)
+      setRevealedCpf(null)
+    } catch (error) { onNotice(getErrorMessage(error)) } finally { setDetailLoading(false) }
+  }
+  function ask(title, description, run, reasonRequired = true) {
+    setPendingAction({ title, description, reasonRequired, run: async (reason) => {
+      const result = await run(reason)
+      if (result !== false && !['Revelar CPF', 'Abrir documento'].includes(title)) {
+        setDetail(null)
+        setSellerDetail(null)
+      }
+      return result
+    } })
+  }
   if (!data) return <EmptyState text="Carregando painel da equipe Time Out..." />
   return (
     <section className="main-column full access-page">
@@ -4719,15 +4846,19 @@ function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggl
           <FinancialHistoryControls overview={payoutOverview} query={financialQuery} onQuery={onFinancialQuery} environments={data.environments || []} />
         </div>
       ) : null}
-      <label className="decision-reason">Justificativa da decisão<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Obrigatória para correções e recusas" /></label>
       <article className="approval-panel"><div className="section-heading compact-heading"><h3>Solicitações de ambiente</h3><span>{data.applications?.length || 0}</span></div><div className="stack">
-        {(data.applications || []).map((application) => <div className="application-card" key={application.id}><div><strong>{application.institutionName}</strong><span className={`status-badge ${application.status}`}>{accessStatusLabels[application.status]}</span></div><p>{application.responsibleName} · CPF {application.cpf} · {application.phone}</p><p>{application.address}</p><p>{application.relationship}: {application.justification}</p><div className="row-actions"><button className="ghost-button" type="button" onClick={() => onRevealCpf(application.id)}><Eye size={15} /> Ver CPF</button>{application.documentPath ? <button className="ghost-button" type="button" onClick={() => onViewDocument(application.id)}><FileText size={15} /> Comprovante</button> : null}<button className="primary-button compact-button" type="button" onClick={() => onReviewApplication(application.id, 'approved')}><Check size={15} /> Aprovar</button><button className="ghost-button" type="button" onClick={() => onReviewApplication(application.id, 'changes_requested', reason)}>Pedir correção</button><button className="ghost-button danger-text" type="button" onClick={() => onReviewApplication(application.id, 'rejected', reason)}><X size={15} /> Recusar</button></div><ApplicationHistory application={application} /></div>)}
-      </div></article>
+        {(data.applications || []).map((application) => <div className="application-card" key={application.id}><div><strong>{application.institutionName}</strong><span className={`status-badge ${application.status}`}>{accessStatusLabels[application.status]}</span></div><p>{application.responsibleName} · CPF {application.cpf} · {application.phone}</p><p>{application.address}</p><button className="ghost-button" type="button" disabled={detailLoading} onClick={() => openDetail(application.id)}><Eye size={15} /> Abrir análise</button></div>)}
+        {!data.applications?.length && <EmptyState text="Nenhuma solicitação de ambiente." />}
+      </div><div className="row-actions"><button className="ghost-button" type="button" disabled={(data.applicationPagination?.page || 1) <= 1} onClick={() => onApplicationPage((data.applicationPagination?.page || 1) - 1)}>Anterior</button><span>Página {data.applicationPagination?.page || 1} de {Math.max(1, data.applicationPagination?.totalPages || 1)}</span><button className="ghost-button" type="button" disabled={(data.applicationPagination?.page || 1) >= (data.applicationPagination?.totalPages || 1)} onClick={() => onApplicationPage((data.applicationPagination?.page || 1) + 1)}>Próxima</button></div></article>
+      <article className="approval-panel"><div className="section-heading compact-heading"><h3>Regularidade do vendedor</h3><span>{data.sellers?.length || 0}</span></div><div className="stack">{(data.sellers || []).map((seller) => <div className="application-card" key={seller.id}><div><strong>{seller.storeName || seller.user?.name}</strong><span className={`status-badge ${seller.status}`}>{accessStatusLabels[seller.status] || seller.status}</span></div><p>{seller.user?.email} · ambiente #{seller.environmentId}</p><button className="ghost-button" type="button" disabled={detailLoading} onClick={() => openSellerDetail(seller.userId)}><Eye size={15} /> Consultar regularidade</button></div>)}{!data.sellers?.length && <EmptyState text="Nenhum vendedor encontrado." />}</div></article>
       <div className="approval-columns">
-        <article className="approval-panel"><div className="section-heading compact-heading"><h3>Ambientes</h3><span>{data.environments?.length || 0}</span></div><div className="stack">{(data.environments || []).map((environment) => <div className="application-card" key={environment.id}><div><strong>{environment.name}</strong><span className={`status-badge ${environment.status}`}>{environment.status === 'suspended' ? 'Suspenso' : 'Ativo'}</span></div><p>{environmentTypeLabels[environment.type] || environment.type} · {environment.isPrivate ? 'Privado' : 'Público'}</p><div className="inline-access-form"><input type="number" min="1" value={transfers[environment.id] || ''} onChange={(event) => setTransfers({ ...transfers, [environment.id]: event.target.value })} placeholder="ID do novo responsável" /><button className="ghost-button" type="button" disabled={!transfers[environment.id]} onClick={() => onTransferEnvironment(environment.id, transfers[environment.id])}>Transferir</button><button className="ghost-button danger-text" type="button" onClick={() => onToggleEnvironment(environment.id, environment.status !== 'suspended')}>{environment.status === 'suspended' ? 'Reativar' : 'Suspender'}</button></div></div>)}</div></article>
-        <article className="approval-panel"><div className="section-heading compact-heading"><h3>Administradores</h3><span>{data.administrators?.length || 0}</span></div><div className="stack">{(data.administrators || []).map((administrator) => { const membership = administrator.memberships?.find((item) => Number(item.environmentId) === Number(administrator.environmentId)); const suspended = membership?.status === 'suspended'; return <div className="application-card" key={administrator.id}><div><strong>{administrator.name}</strong><span className={`status-badge ${suspended ? 'suspended' : 'approved'}`}>{suspended ? 'Suspenso' : 'Ativo'}</span></div><p>{administrator.email} · ambiente #{administrator.environmentId || '-'}</p><button className="ghost-button danger-text" type="button" onClick={() => onToggleAdministrator(administrator.id, !suspended)}>{suspended ? 'Reativar' : 'Suspender'}</button></div> })}</div></article>
+        <article className="approval-panel"><div className="section-heading compact-heading"><h3>Ambientes</h3><span>{data.environments?.length || 0}</span></div><div className="stack">{(data.environments || []).map((environment) => <div className="application-card" key={environment.id}><div><strong>{environment.name}</strong><span className={`status-badge ${environment.status}`}>{environment.status === 'suspended' ? 'Suspenso' : 'Ativo'}</span></div><p>{environmentTypeLabels[environment.type] || environment.type} · {environment.isPrivate ? 'Privado' : 'Público'}</p><div className="inline-access-form"><input type="number" min="1" value={transfers[environment.id] || ''} onChange={(event) => setTransfers({ ...transfers, [environment.id]: event.target.value })} placeholder="ID do novo responsável" /><button className="ghost-button" type="button" disabled={!transfers[environment.id]} onClick={() => ask('Transferir administração', `Transferir ${environment.name} para o usuário #${transfers[environment.id]}?`, (reason) => onTransferEnvironment(environment.id, transfers[environment.id], reason))}>Transferir</button><button className="ghost-button danger-text" type="button" onClick={() => ask(environment.status === 'suspended' ? 'Reativar ambiente' : 'Suspender ambiente', `Alterar o acesso a ${environment.name}?`, (reason) => onToggleEnvironment(environment.id, environment.status !== 'suspended', reason))}>{environment.status === 'suspended' ? 'Reativar' : 'Suspender'}</button></div></div>)}</div></article>
+        <article className="approval-panel"><div className="section-heading compact-heading"><h3>Administradores</h3><span>{data.administrators?.length || 0}</span></div><div className="stack">{(data.administrators || []).map((administrator) => { const membership = administrator.memberships?.find((item) => Number(item.environmentId) === Number(administrator.environmentId)); const suspended = membership?.status === 'suspended'; return <div className="application-card" key={administrator.id}><div><strong>{administrator.name}</strong><span className={`status-badge ${suspended ? 'suspended' : 'approved'}`}>{suspended ? 'Suspenso' : 'Ativo'}</span></div><p>{administrator.email} · ambiente #{administrator.environmentId || '-'}</p><button className="ghost-button danger-text" type="button" onClick={() => ask(suspended ? 'Reativar administrador' : 'Suspender administrador', `Alterar acesso de ${administrator.name}?`, (reason) => onToggleAdministrator(administrator.id, !suspended, reason))}>{suspended ? 'Reativar' : 'Suspender'}</button></div> })}</div></article>
       </div>
       <article className="approval-panel"><div className="section-heading compact-heading"><h3>Auditoria recente</h3><span>{data.auditLogs?.length || 0}</span></div><div className="audit-list">{(data.auditLogs || []).map((log) => <div key={log.id}><strong>{log.summary}</strong><span>{log.actor?.name || 'Sistema'} · {log.action} · {formatDate(log.createdAt)}</span></div>)}</div></article>
+      {detail && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null) }}><div className="administrative-dialog wide-dialog" role="dialog" aria-modal="true" aria-label="Análise de ambiente"><div className="section-heading compact-heading"><div><h3>{detail.application.institutionName}</h3><span className={`status-badge ${detail.application.status}`}>{accessStatusLabels[detail.application.status] || detail.application.status}</span></div><button className="icon-button" type="button" title="Fechar" onClick={() => setDetail(null)}><X size={18} /></button></div><div className="administrative-detail-grid"><p><strong>Solicitante:</strong> {detail.application.applicant?.name} · {detail.application.applicant?.email}</p><p><strong>Telefone:</strong> {detail.application.phone}</p><p><strong>Conta criada:</strong> {formatDate(detail.application.applicant?.createdAt)}</p><p><strong>E-mail:</strong> {detail.application.applicant?.emailVerifiedAt ? 'Confirmado' : 'Pendente'}</p><p><strong>Solicitação:</strong> {formatDate(detail.application.createdAt)}</p><p><strong>Tipo:</strong> {environmentTypeLabels[detail.application.institutionType] || detail.application.institutionType}</p><p><strong>Endereço:</strong> {detail.application.address}</p><p><strong>CPF:</strong> {revealedCpf || detail.application.cpf}</p><p><strong>Relação:</strong> {detail.application.relationship}</p><p><strong>Descrição:</strong> {detail.application.environmentDescription}</p><p><strong>Justificativa:</strong> {detail.application.justification}</p><p><strong>Decisão:</strong> {detail.application.reviewer?.name || 'Aguardando'} · {detail.application.decisionReason || detail.application.correctionNotes || 'Sem observações'}</p></div><div className="row-actions"><button className="ghost-button" type="button" onClick={() => ask('Revelar CPF', 'O acesso ao CPF completo será registrado em auditoria.', async (reason) => setRevealedCpf(await onRevealCpf(detail.application.id, reason)))}><Eye size={15} /> Revelar CPF</button>{detail.application.documentPath && <button className="ghost-button" type="button" onClick={() => ask('Abrir documento', 'O acesso ao documento protegido será registrado em auditoria.', (reason) => onViewDocument(detail.application.id, reason))}><FileText size={15} /> Documento</button>}{!['approved', 'rejected'].includes(detail.application.status) && <><button className="ghost-button" type="button" onClick={() => ask('Iniciar análise', 'Marcar esta solicitação como em análise?', (reason) => onReviewApplication(detail.application.id, 'under_review', reason), false)}>Em análise</button><button className="primary-button compact-button" type="button" onClick={() => ask('Aprovar ambiente', 'Um ambiente e seu administrador serão criados.', (reason) => onReviewApplication(detail.application.id, 'approved', reason), false)}><Check size={15} /> Aprovar</button><button className="ghost-button" type="button" onClick={() => ask('Solicitar correções', 'O solicitante receberá a justificativa.', (reason) => onReviewApplication(detail.application.id, 'changes_requested', reason))}>Pedir correção</button><button className="ghost-button danger-text" type="button" onClick={() => ask('Recusar solicitação', 'Esta decisão será registrada e notificada.', (reason) => onReviewApplication(detail.application.id, 'rejected', reason))}><X size={15} /> Recusar</button></>}</div><h4>Histórico</h4><ApplicationHistory application={detail.application} /><h4>Solicitações anteriores</h4>{(detail.previousApplications || []).map((item) => <p key={item.id}>#{item.id} · {item.institutionName} · {accessStatusLabels[item.status] || item.status} · {formatDate(item.createdAt)}</p>)}{!detail.previousApplications?.length && <p>Nenhuma solicitação anterior.</p>}<h4>Ambientes administrados</h4>{(detail.administeredMemberships || []).map((item) => <p key={item.environmentId}>{item.environment?.name} · {accessStatusLabels[item.status] || item.status}</p>)}{!detail.administeredMemberships?.length && <p>Nenhum ambiente anterior.</p>}<h4>Decisões</h4><div className="audit-list">{(detail.decisions || []).map((log) => <div key={log.id}><strong>{log.summary}</strong><span>{formatDate(log.createdAt)} · {log.metadata?.reason || log.action}</span></div>)}</div></div></div>}
+      {sellerDetail && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSellerDetail(null) }}><div className="administrative-dialog wide-dialog" role="dialog" aria-modal="true" aria-label="Regularidade do vendedor"><div className="section-heading compact-heading"><div><h3>{sellerDetail.user?.name}</h3><span>{sellerDetail.user?.email} · {sellerDetail.environment?.name}</span></div><button className="icon-button" type="button" title="Fechar" onClick={() => setSellerDetail(null)}><X size={18} /></button></div><p><strong>Situação:</strong> {sellerDetail.status} · {sellerDetail.decisionReason || 'Sem observações'}</p><div className="administrative-detail-grid"><p><strong>Telefone:</strong> {sellerDetail.user?.phone}</p><p><strong>CPF:</strong> {revealedCpf || sellerDetail.user?.cpfMasked}</p><p><strong>E-mail:</strong> {sellerDetail.user?.emailVerifiedAt ? 'Confirmado' : 'Pendente'}</p><p><strong>Participação:</strong> {sellerDetail.membership?.status}</p><p><strong>Produtos:</strong> {sellerDetail.products?.active} ativos · {sellerDetail.products?.inactive} inativos</p><p><strong>Pedidos:</strong> {sellerDetail.orders?.total} recebidos · {sellerDetail.orders?.delivered} entregues · {sellerDetail.orders?.canceled} cancelados · {sellerDetail.orders?.refused} recusados</p><p><strong>Recebimento simulado:</strong> {sellerDetail.payoutAccount?.status}</p><p><strong>Documento:</strong> {sellerDetail.documentAvailable ? 'Enviado' : 'Não enviado'}</p></div><div className="row-actions"><button className="ghost-button" type="button" onClick={() => ask('Revelar CPF', 'O acesso será auditado.', async (reason) => setRevealedCpf(await onRevealSellerCpf(sellerDetail.application.id, reason)))}><Eye size={15} /> Revelar CPF</button>{sellerDetail.documentAvailable && <button className="ghost-button" type="button" onClick={() => ask('Abrir documento', 'O acesso será auditado.', (reason) => onViewSellerDocument(sellerDetail.application.id, reason))}><FileText size={15} /> Documento</button>}</div><ApplicationHistory application={sellerDetail.application} /><div className="audit-list">{(sellerDetail.decisions || []).map((log) => <div key={log.id}><strong>{log.summary}</strong><span>{formatDate(log.createdAt)}</span></div>)}</div></div></div>}
+      {pendingAction && <AdministrativeConfirmDialog title={pendingAction.title} description={pendingAction.description} reasonRequired={pendingAction.reasonRequired} onConfirm={pendingAction.run} onClose={() => setPendingAction(null)} />}
     </section>
   )
 }
@@ -5083,12 +5214,59 @@ function ProfileView({
   )
 }
 
-function AdminUsersView({ users, currentUserId, filters, onFilter, onDelete }) {
+function AdministrativeConfirmDialog({ title, description, reasonRequired = false, onConfirm, onClose }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function submit(event) {
+    event.preventDefault()
+    if (reasonRequired && reason.trim().length < 8) return
+    setBusy(true)
+    try {
+      const result = await onConfirm(reason.trim())
+      if (result !== false && result !== null) onClose()
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <form className="administrative-dialog" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit}>
+        <div className="section-heading compact-heading"><h3>{title}</h3><button type="button" className="icon-button" onClick={onClose} title="Fechar"><X size={18} /></button></div>
+        <p>{description}</p>
+        {reasonRequired && <label>Motivo da ação<textarea value={reason} minLength={8} maxLength={500} required onChange={(event) => setReason(event.target.value)} placeholder="Explique a decisão" /></label>}
+        <div className="row-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancelar</button><button className="primary-button compact-button" disabled={busy || (reasonRequired && reason.trim().length < 8)}>{busy ? 'Aguarde...' : 'Confirmar'}</button></div>
+      </form>
+    </div>
+  )
+}
+
+function AccountManagementDialog({ data, currentUserId, onClose, onAction }) {
+  const [name, setName] = useState(data.user.name || '')
+  const [phone, setPhone] = useState(data.user.phone || '')
+  const [pending, setPending] = useState(null)
+  const account = data.user
+  const ownAccount = Number(account.id) === Number(currentUserId)
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="administrative-dialog wide-dialog" role="dialog" aria-modal="true" aria-label={`Gerenciar ${account.name}`}>
+        <div className="section-heading compact-heading"><div><h3>{account.name}</h3><span>{account.email}</span></div><button type="button" className="icon-button" onClick={onClose} title="Fechar"><X size={18} /></button></div>
+        <p>{roleLabel(account.role)} · {account.isSuspended ? 'Conta suspensa' : 'Conta ativa'} · {account.emailVerifiedAt ? 'E-mail confirmado' : 'E-mail pendente'}</p>
+        <div className="approval-form-grid"><label>Nome<input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label><label>Telefone<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label></div>
+        {!ownAccount && <div className="row-actions"><button className="ghost-button" type="button" onClick={() => setPending({ title: 'Corrigir dados', description: 'A alteração de nome ou telefone será auditada.', run: () => onAction('profile', { name, phone }) })}><Check size={16} /> Salvar dados</button><button className="ghost-button" type="button" onClick={() => setPending({ title: 'Encerrar sessões', description: 'Todos os dispositivos precisarão entrar novamente.', reasonRequired: true, run: (reason) => onAction('sessions', { reason }) })}><LogOut size={16} /> Encerrar sessões</button><button className="ghost-button" type="button" onClick={() => setPending({ title: 'Solicitar nova confirmação', description: 'O e-mail atual permanecerá igual. A pessoa terá que confirmar novamente.', reasonRequired: true, run: (reason) => onAction('email', { reason }) })}><MailCheck size={16} /> Confirmar e-mail novamente</button><button className="ghost-button danger-text" type="button" onClick={() => setPending({ title: account.isSuspended ? 'Reativar conta' : 'Suspender conta', description: 'Esta ação encerra as sessões atuais e preserva pedidos e histórico.', reasonRequired: !account.isSuspended, run: (reason) => onAction('status', { suspended: !account.isSuspended, reason }) })}><Ban size={16} /> {account.isSuspended ? 'Reativar' : 'Suspender'}</button></div>}
+        <div className="section-heading compact-heading"><h3>Participações</h3><span>{data.memberships?.length || 0}</span></div>
+        <div className="stack">{(data.memberships || []).map((membership) => <div className="application-card" key={membership.id}><strong>{membership.environment?.name || `Ambiente #${membership.environmentId}`}</strong><p>{roleLabel(membership.role)} · {accessStatusLabels[membership.status] || membership.status}</p></div>)}{!data.memberships?.length && <EmptyState text="Nenhuma participação registrada." />}</div>
+        <div className="section-heading compact-heading"><h3>Histórico administrativo</h3><span>{data.history?.length || 0}</span></div>
+        <div className="audit-list">{(data.history || []).map((log) => <div key={log.id}><strong>{log.summary}</strong><span>{formatDate(log.createdAt)} · {log.metadata?.reason || log.action}</span></div>)}{!data.history?.length && <EmptyState text="Nenhuma ação administrativa registrada." />}</div>
+      </div>
+      {pending && <AdministrativeConfirmDialog title={pending.title} description={pending.description} reasonRequired={pending.reasonRequired} onConfirm={pending.run} onClose={() => setPending(null)} />}
+    </div>
+  )
+}
+
+function AdminUsersView({ users, pagination, isPlatformAdmin, currentUserId, filters, onFilter, onManage }) {
   return (
     <section className="main-column full">
       <div className="section-heading">
         <h2>Usuários do ambiente</h2>
-        <span>{users.length} usuários</span>
+        <span>{pagination?.total || 0} contas</span>
       </div>
 
       <div className="toolbar">
@@ -5096,18 +5274,19 @@ function AdminUsersView({ users, currentUserId, filters, onFilter, onDelete }) {
           <Search size={18} />
           <input
             value={filters.search}
-            onChange={(event) => onFilter({ ...filters, search: event.target.value })}
+            onChange={(event) => onFilter({ ...filters, search: event.target.value, page: 1 })}
             placeholder="Buscar por nome ou e-mail"
           />
         </div>
         <select
           value={filters.role}
-          onChange={(event) => onFilter({ ...filters, role: event.target.value })}
+          onChange={(event) => onFilter({ ...filters, role: event.target.value, page: 1 })}
         >
           <option value="">Todos os perfis</option>
           <option value="customer">Clientes</option>
           <option value="seller">Vendedores</option>
-          <option value="environment_admin">Administradores</option>
+          {isPlatformAdmin && <option value="environment_admin">Administradores</option>}
+          {isPlatformAdmin && <option value="platform_admin">Equipe Time Out</option>}
         </select>
       </div>
 
@@ -5144,13 +5323,12 @@ function AdminUsersView({ users, currentUserId, filters, onFilter, onDelete }) {
             <span className={`role-badge ${item.role}`}>{roleLabel(item.role)}</span>
             <div className="row-actions">
               <button
-                className="icon-button danger"
+                className="icon-button"
                 type="button"
-                onClick={() => onDelete(item.id)}
-                disabled={Number(item.id) === Number(currentUserId)}
-                title={Number(item.id) === Number(currentUserId) ? 'Você não pode remover seu próprio usuário' : 'Remover usuário'}
+                onClick={() => onManage(item.id)}
+                title={Number(item.id) === Number(currentUserId) ? 'Ver minha conta' : 'Gerenciar conta'}
               >
-                <Trash2 size={17} />
+                <UserCog size={17} />
               </button>
             </div>
           </article>
@@ -5158,6 +5336,7 @@ function AdminUsersView({ users, currentUserId, filters, onFilter, onDelete }) {
       </div>
 
       {users.length === 0 ? <EmptyState text="Nenhum usuário encontrado." /> : null}
+      <div className="row-actions"><button className="ghost-button" type="button" disabled={filters.page <= 1} onClick={() => onFilter({ ...filters, page: filters.page - 1 })}>Anterior</button><span>Página {pagination?.page || 1} de {Math.max(1, pagination?.totalPages || 1)}</span><button className="ghost-button" type="button" disabled={filters.page >= (pagination?.totalPages || 1)} onClick={() => onFilter({ ...filters, page: filters.page + 1 })}>Próxima</button></div>
     </section>
   )
 }

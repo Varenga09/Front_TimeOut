@@ -9,6 +9,7 @@ vi.mock('./api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   },
   getAssetUrl: (path) => path || null,
   getErrorMessage: (error) => error?.response?.data?.message || error?.message || 'Erro simulado',
@@ -36,6 +37,18 @@ describe('Tela de acesso', () => {
     expect(screen.getByRole('heading', { name: 'Criar conta' })).toBeInTheDocument()
     expect(screen.getByLabelText('Nome completo')).toBeInTheDocument()
     expect(screen.getByLabelText('Telefone / WhatsApp')).toBeInTheDocument()
+  })
+
+  test('cadastro não obriga código de ambiente', async () => {
+    localStorage.getItem.mockReturnValue(null)
+    api.post.mockResolvedValue({ data: { data: {} } })
+    render(createElement(App))
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastro' }))
+    fireEvent.change(screen.getByLabelText('Nome completo'), { target: { value: 'Pessoa Teste' } })
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@timeout.test' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'SenhaForte#123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Criar minha conta' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/register', expect.objectContaining({ email: 'pessoa@timeout.test', environmentAccessCode: undefined })))
   })
 
   test('permite mostrar e ocultar a senha', () => {
@@ -221,5 +234,42 @@ describe('Painel da equipe Time Out', () => {
 
     expect(await screen.findByRole('heading', { name: 'Equipe Time Out' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Equipe Time Out' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('conta interna com participação aprovada mantém painel e pode abrir a vitrine', async () => {
+    const user = { id: 50, name: 'Equipe', email: 'equipe@timeout.test', role: 'platform_admin', environmentId: 2, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 9, environmentId: 2, role: 'customer', status: 'approved', environment: { id: 2, name: 'Escola', status: 'active' } }] }
+    localStorage.getItem.mockReturnValue(JSON.stringify({ token: 'teste', user }))
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/access/platform': { applications: [], sellers: [], environments: [], administrators: [], auditLogs: [] },
+      '/access/admin/accounts': { users: [], total: 0, page: 1, totalPages: 0 },
+      '/payments/platform/overview': { accounts: [], summary: {} },
+    })[url] || {} } }))
+    render(createElement(App))
+    expect(await screen.findByRole('button', { name: 'Equipe Time Out' })).toBeInTheDocument()
+    const market = await screen.findByRole('button', { name: 'Vitrine' })
+    fireEvent.click(market)
+    expect(market).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('recusa de ambiente exige confirmação e motivo antes de chamar a API', async () => {
+    const user = { id: 50, name: 'Equipe', email: 'equipe@timeout.test', role: 'platform_admin', environmentId: null, emailVerifiedAt: new Date().toISOString() }
+    localStorage.getItem.mockReturnValue(JSON.stringify({ token: 'teste', user }))
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/access/platform': { applications: [{ id: 7, institutionName: 'Escola Exemplo', responsibleName: 'Responsável', cpf: '***.456.789-**', phone: '11999999999', status: 'pending', address: 'Rua Exemplo' }], sellers: [], environments: [], administrators: [], auditLogs: [], applicationPagination: { page: 1, totalPages: 1 } },
+      '/access/platform/environment-applications/7': { application: { id: 7, institutionName: 'Escola Exemplo', status: 'pending', applicant: { name: 'Responsável', email: 'responsavel@timeout.test' } }, previousApplications: [], administeredMemberships: [], decisions: [] },
+      '/access/admin/accounts': { users: [], total: 0, page: 1, totalPages: 0 }, '/payments/platform/overview': { accounts: [], summary: {} },
+    })[url] || {} } }))
+    api.patch.mockResolvedValue({ data: { data: {} } })
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir análise' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Recusar' }))
+    expect(api.patch).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: 'Recusar solicitação' })
+    fireEvent.change(dialog.querySelector('textarea'), { target: { value: 'Dados insuficientes para comprovar o vínculo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/access/platform/environment-applications/7', { status: 'rejected', reason: 'Dados insuficientes para comprovar o vínculo' }))
   })
 })
