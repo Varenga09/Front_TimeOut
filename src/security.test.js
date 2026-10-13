@@ -282,7 +282,7 @@ describe('Navegação e isolamento do catálogo', () => {
     window.history.replaceState({}, '', '/')
   })
 
-  test('miniaturas trocam apenas a imagem do produto aberto na sequência suco, coxinha, suco', async () => {
+  test('página do produto isola galeria e avaliações na sequência suco, coxinha, suco', async () => {
     const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
     const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: ['/suco-extra.png'], flavors: [{ name: 'Laranja', priceAdjustment: 0 }], price: 5, quantity: 5, seller: { id: 20, name: 'Loja' } }
     const coxinha = { id: 2, name: 'Coxinha', imageUrl: '/coxinha.png', imageGallery: ['/coxinha-extra.png'], flavors: [{ name: 'Frango', priceAdjustment: 0 }], price: 8, quantity: 5, seller: { id: 20, name: 'Loja' } }
@@ -296,22 +296,25 @@ describe('Navegação e isolamento do catálogo', () => {
 
     render(createElement(App))
     await screen.findByRole('button', { name: 'Abrir detalhes de Suco' })
-    for (const [name, image, option, comment, otherImage] of [
-      ['Suco', '/suco-extra.png', 'Laranja', 'Comentário do suco', '/coxinha-extra.png'],
-      ['Coxinha', '/coxinha-extra.png', 'Frango', 'Comentário da coxinha', '/suco-extra.png'],
-      ['Suco', '/suco-extra.png', 'Laranja', 'Comentário do suco', '/coxinha-extra.png'],
+    for (const [name, id, image, option, comment, otherImage] of [
+      ['Suco', 1, '/suco-extra.png', 'Laranja', 'Comentário do suco', '/coxinha-extra.png'],
+      ['Coxinha', 2, '/coxinha-extra.png', 'Frango', 'Comentário da coxinha', '/suco-extra.png'],
+      ['Suco', 1, '/suco-extra.png', 'Laranja', 'Comentário do suco', '/coxinha-extra.png'],
     ]) {
       fireEvent.click(screen.getByRole('button', { name: `Abrir detalhes de ${name}` }))
-      const dialog = await screen.findByRole('dialog', { name: `Detalhes de ${name}` })
-      const thumbnails = dialog.querySelectorAll('.gallery-thumb')
+      const page = await screen.findByRole('region', { name: `Detalhes de ${name}` })
+      expect(window.location.search).toContain(`produto=${id}`)
+      expect(screen.queryByRole('dialog', { name: `Detalhes de ${name}` })).not.toBeInTheDocument()
+      const thumbnails = page.querySelectorAll('.gallery-thumb')
       expect(thumbnails).toHaveLength(2)
       expect([...thumbnails].map((button) => button.querySelector('img').getAttribute('src'))).not.toContain(otherImage)
       fireEvent.click(thumbnails[1])
-      expect(dialog.querySelector('.gallery-main img')).toHaveAttribute('src', image)
-      expect(dialog).toHaveTextContent(option)
-      expect(dialog).toHaveTextContent(comment)
-      expect(dialog).not.toHaveTextContent(name === 'Suco' ? 'Comentário da coxinha' : 'Comentário do suco')
-      fireEvent.click(dialog.querySelector('.modal-close'))
+      expect(page.querySelector('.gallery-main img')).toHaveAttribute('src', image)
+      expect(page).toHaveTextContent(option)
+      expect(page).toHaveTextContent(comment)
+      expect(page).not.toHaveTextContent(name === 'Suco' ? 'Comentário da coxinha' : 'Comentário do suco')
+      fireEvent.click(screen.getByRole('navigation', { name: 'Navegação principal' }).getElementsByTagName('button')[0])
+      await screen.findByRole('button', { name: `Abrir detalhes de ${name}` })
     }
   })
 
@@ -338,21 +341,66 @@ describe('Navegação e isolamento do catálogo', () => {
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Vitrine' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Suco' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir detalhes de Coxinha' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Detalhes de Coxinha' })
-    expect(dialog).toHaveTextContent('Frango')
-    expect(dialog.querySelector('.modal-purchase-bar strong')).toHaveTextContent('R$ 10,00')
-    expect(dialog.querySelector('.gallery-main img')).toHaveAttribute('src', '/coxinha.png')
-    fireEvent.click(dialog.querySelector('.purchase-actions .ghost-button'))
-    expect(screen.getByRole('button', { name: 'Carrinho (1)' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Vitrine' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Coxinha' }))
+    const page = await screen.findByRole('region', { name: 'Detalhes de Coxinha' })
+    expect(page).toHaveTextContent('Frango')
+    expect(page.querySelector('.modal-purchase-bar strong')).toHaveTextContent('R$ 10,00')
+    expect(page.querySelector('.gallery-main img')).toHaveAttribute('src', '/coxinha.png')
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar quantidade' }))
+    fireEvent.click(page.querySelector('.purchase-actions .ghost-button'))
+    expect(screen.getByRole('button', { name: 'Carrinho (2)' })).toBeInTheDocument()
     resolveSuco({ data: { data: { product: suco } } })
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Detalhes de Coxinha' })).toBeInTheDocument())
-    expect(screen.queryByRole('dialog', { name: 'Detalhes de Suco' })).not.toBeInTheDocument()
-    fireEvent.click(dialog.querySelector('.modal-close'))
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Detalhes de Coxinha' })).toBeInTheDocument())
+    expect(screen.queryByRole('region', { name: 'Detalhes de Suco' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('navigation', { name: 'Navegação principal' }).getElementsByTagName('button')[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Suco' }))
+    const sucoPage = await screen.findByRole('region', { name: 'Detalhes de Suco' })
+    expect(sucoPage.querySelector('.gallery-main img')).toHaveAttribute('src', '/suco.png')
+    expect(sucoPage).not.toHaveTextContent('Sabores e opções')
+  })
+
+  test('link direto abre o produto pelo ID e rejeita produto indisponível', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const product = { id: 2, name: 'Coxinha', price: 8, quantity: 4, flavors: [], imageUrl: '/coxinha.png', seller: { id: 20, name: 'Loja' } }
+    window.history.replaceState({}, '', '/?produto=2')
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => {
+      if (url === '/products/999') throw new Error('Não encontrado')
+      return { data: { data: ({
+        '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+        '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+        '/products/2': { product }, '/products/2/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 },
+      })[url] || {} } }
+    })
+    render(createElement(App))
+    const page = await screen.findByRole('region', { name: 'Detalhes de Coxinha' })
+    expect(page.querySelector('.gallery-main img')).toHaveAttribute('src', '/coxinha.png')
+    expect(screen.queryByRole('button', { name: 'Abrir detalhes de Coxinha' })).not.toBeInTheDocument()
+    window.history.replaceState({}, '', '/?produto=999')
+    fireEvent.popState(window, { state: {} })
+    expect(await screen.findByText('Produto não encontrado ou indisponível neste ambiente.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Voltar à Vitrine' })).toBeInTheDocument()
+  })
+
+  test('voltar do produto preserva a pesquisa da Vitrine', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const product = { id: 1, name: 'Suco', price: 5, quantity: 2, flavors: [], seller: { id: 20, name: 'Loja' } }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/products/1': { product }, '/products/1/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 },
+    })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Vitrine' }))
+    fireEvent.change(screen.getByPlaceholderText('Buscar produto'), { target: { value: 'suco' } })
     fireEvent.click(screen.getByRole('button', { name: 'Abrir detalhes de Suco' }))
-    const sucoDialog = await screen.findByRole('dialog', { name: 'Detalhes de Suco' })
-    expect(sucoDialog.querySelector('.gallery-main img')).toHaveAttribute('src', '/suco.png')
-    expect(sucoDialog).not.toHaveTextContent('Sabores e opções')
+    await screen.findByRole('region', { name: 'Detalhes de Suco' })
+    window.history.replaceState({ marketScroll: 120 }, '', '/')
+    fireEvent.popState(window, { state: { marketScroll: 120 } })
+    expect(await screen.findByPlaceholderText('Buscar produto')).toHaveValue('suco')
+    expect(window.location.search).toBe('')
   })
 
   test('logo retorna à vitrine sem encerrar sessão ou carrinho', async () => {

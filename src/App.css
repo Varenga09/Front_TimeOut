@@ -5259,3 +5259,166 @@ body,
     border-top: 1px solid #e1e7ed;
   }
 }
+
+.product-detail-page {
+  width: min(1280px, 100%);
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+.product-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.product-breadcrumb button,
+.product-breadcrumb a {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.product-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr);
+  align-items: start;
+  gap: 34px;
+}
+
+.product-detail-page .product-modal-visual {
+  position: sticky;
+  top: 96px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.product-detail-page .gallery-main {
+  width: 100%;
+  aspect-ratio: 1 / .84;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.product-detail-page .gallery-main img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.product-detail-page .gallery-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0;
+}
+
+.product-detail-page .gallery-thumb {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+}
+
+.product-detail-page .product-modal-body {
+  min-width: 0;
+  overflow: visible;
+  padding: 0;
+}
+
+.product-detail-page .product-modal-heading h2 {
+  margin-top: 12px;
+  font-size: clamp(25px, 2.2rem, 34px);
+}
+
+.product-detail-page .product-modal-heading p {
+  white-space: pre-wrap;
+}
+
+.product-detail-page .rating-summary a {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.product-local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.product-local-note svg { flex: 0 0 auto; }
+
+.product-detail-page .modal-purchase-bar {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+}
+
+.product-quantity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.product-quantity > span { font-size: 13px; font-weight: 800; }
+
+.product-quantity > div {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.product-quantity button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 19px;
+}
+
+.product-quantity button:disabled { color: var(--muted); cursor: default; }
+.product-quantity output { min-width: 28px; text-align: center; font-weight: 800; }
+.product-detail-page .purchase-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.product-detail-page .purchase-actions .compact-button { width: 100%; }
+.product-detail-page .product-description { border-top: 1px solid var(--border); padding-top: 22px; }
+.product-detail-page .product-description p { margin: 0; color: var(--muted); line-height: 1.6; white-space: pre-wrap; }
+.product-detail-page #avaliacoes { scroll-margin-top: 110px; border-top: 1px solid var(--border); padding-top: 22px; }
+.product-detail-state { min-height: 300px; display: grid; align-content: start; gap: 18px; }
+.product-detail-state p { color: var(--muted); }
+.detail-back { justify-self: start; border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; font-weight: 800; }
+.detail-back svg { transform: rotate(180deg); vertical-align: middle; }
+
+@media (max-width: 900px) {
+  .product-detail-grid { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .product-detail-page .product-modal-visual { position: static; }
+  .product-detail-page .gallery-main { aspect-ratio: 1 / .8; }
+}
+
+@media (max-width: 480px) {
+  .product-detail-page { padding-bottom: 110px; }
+  .product-detail-page .product-modal-heading h2 { font-size: 25px; }
+  .product-detail-page .purchase-actions { grid-template-columns: minmax(0, 1fr); }
+  .product-detail-page .gallery-thumb { width: 60px; height: 60px; flex-basis: 60px; }
+}

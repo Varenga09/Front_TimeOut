@@ -456,6 +456,11 @@ function getProductImages(product) {
   return Array.from(new Set(images))
 }
 
+function productIdFromUrl() {
+  const value = new URLSearchParams(window.location.search).get('produto')
+  return value ? (/^[1-9]\d*$/.test(value) ? value : 'invalid') : null
+}
+
 function formatRating(value) {
   const rating = Number(value || 0)
   return rating > 0 ? rating.toFixed(1).replace('.', ',') : '0,0'
@@ -1536,6 +1541,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           : 'market'
     const requested = new URLSearchParams(window.location.search).get('timeoutView')
     const marketAllowed = session.user.memberships?.some((item) => Number(item.environmentId) === Number(session.user.environmentId) && item.status === 'approved' && item.environment?.status === 'active')
+    if (productIdFromUrl()) return 'market'
     if (requested === 'platform-access' && session.user.role === 'platform_admin') return requested
     if (requested === 'admin-access' && ['admin', 'environment_admin'].includes(session.user.role)) return requested
     if (requested === 'admin-users' && ['platform_admin', 'admin', 'environment_admin'].includes(session.user.role)) return requested
@@ -1571,7 +1577,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [cart, setCart] = useState(() => readStoredCart(cartStorageKey, legacyCartStorageKey))
   const [checkoutResult, setCheckoutResult] = useState(null)
   const [cartToast, setCartToast] = useState('')
+  const [productId, setProductId] = useState(productIdFromUrl)
   const [selectedProduct, setSelectedProduct] = useState(null)
+  const [productError, setProductError] = useState('')
   const [targetApplicationId, setTargetApplicationId] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('timeoutResourceType') === 'environment_application' ? params.get('timeoutResourceId') : null
@@ -1581,6 +1589,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return params.get('timeoutResourceType') === 'seller_application' ? params.get('timeoutResourceId') : null
   })
   const productRequestRef = useRef(0)
+  const marketScrollRef = useRef(0)
+  const restoreMarketScrollRef = useRef(false)
   const [productFeedback, setProductFeedback] = useState({ reviews: [], averageRating: 0, reviewsCount: 0 })
   const [productDetailsLoading, setProductDetailsLoading] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
@@ -1631,6 +1641,40 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const isSeller = user.role === 'seller' || isEnvironmentAdmin
   const isApprovedSeller = user.role === 'seller'
   const isAdmin = isEnvironmentAdmin
+
+  useEffect(() => {
+    const previous = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
+    function handlePopState(event) {
+      const nextId = productIdFromUrl()
+      productRequestRef.current += 1
+      setProductId(nextId)
+      setSelectedProduct(null)
+      setProductError('')
+      if (nextId) {
+        setView('market')
+        window.scrollTo(0, 0)
+      } else if (event.state?.marketScroll !== undefined) {
+        marketScrollRef.current = event.state.marketScroll
+        restoreMarketScrollRef.current = true
+        setView('market')
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.history.scrollRestoration = previous
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (view !== 'market' || productId || !restoreMarketScrollRef.current) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo(0, marketScrollRef.current)
+      restoreMarketScrollRef.current = false
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [view, productId, products])
 
   const loadProducts = useCallback(async () => {
     const params = {}
@@ -1845,7 +1889,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       ...product,
       selectedFlavor,
       cartUnitPrice,
-      cartQuantity: 1,
+      cartQuantity: Math.max(1, Math.min(Number(product.selectedQuantity) || 1, Number(product.quantity))),
     }
   }
 
@@ -1873,34 +1917,81 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return true
   }
 
-  async function openProduct(product) {
-    const requestId = ++productRequestRef.current
-    setSelectedProduct({ id: product.id, name: product.name })
-    setProductFeedback({ reviews: [], averageRating: 0, reviewsCount: 0 })
-    setProductDetailsLoading(true)
-    setReviewSubmitting(false)
-
-    try {
-      const [productResponse, reviewsResponse] = await Promise.all([
-        api.get(`/products/${product.id}`),
-        api.get(`/products/${product.id}/reviews`),
-      ])
-
-      if (requestId !== productRequestRef.current) return
-      if (Number(productResponse.data.data.product.id) !== Number(product.id)) {
-        throw new Error('Os detalhes do produto não correspondem ao item selecionado')
-      }
-      setSelectedProduct(productResponse.data.data.product)
-      setProductFeedback(reviewsResponse.data.data)
-    } catch (error) {
-      if (requestId === productRequestRef.current) {
-        setSelectedProduct(null)
-        onNotice(getErrorMessage(error))
-      }
-    } finally {
-      if (requestId === productRequestRef.current) setProductDetailsLoading(false)
-    }
+  function openProduct(product) {
+    if (!canUseMarket) return
+    marketScrollRef.current = window.scrollY
+    window.history.replaceState({ ...window.history.state, marketScroll: marketScrollRef.current }, '')
+    const url = new URL(window.location.href)
+    url.searchParams.set('produto', String(product.id))
+    window.history.pushState({ productId: String(product.id) }, '', `${url.pathname}${url.search}${url.hash}`)
+    setView('market')
+    setProductId(String(product.id))
+    window.scrollTo(0, 0)
   }
+
+  useEffect(() => {
+    if (!productId || !canUseMarket) return undefined
+    const requestId = ++productRequestRef.current
+    let active = true
+    Promise.resolve().then(() => {
+      setSelectedProduct(null)
+      setProductError('')
+      setProductFeedback({ reviews: [], averageRating: 0, reviewsCount: 0 })
+      setProductDetailsLoading(true)
+      setReviewSubmitting(false)
+    })
+    Promise.all([api.get(`/products/${productId}`), api.get(`/products/${productId}/reviews`)])
+      .then(([productResponse, reviewsResponse]) => {
+        if (!active || requestId !== productRequestRef.current) return
+        const product = productResponse.data.data.product
+        if (String(product.id) !== productId) throw new Error('Produto incorreto na resposta')
+        setSelectedProduct(product)
+        setProductFeedback(reviewsResponse.data.data)
+      })
+      .catch(() => {
+        if (active && requestId === productRequestRef.current) {
+          setProductError('Produto não encontrado ou indisponível neste ambiente.')
+          setSelectedProduct(null)
+        }
+      })
+      .finally(() => {
+        if (active && requestId === productRequestRef.current) setProductDetailsLoading(false)
+      })
+    return () => { active = false; productRequestRef.current += 1 }
+  }, [productId, canUseMarket])
+
+  function backToMarket() {
+    if (window.history.state?.productId === productId) {
+      window.history.back()
+      return
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.delete('produto')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    setProductId(null)
+    setView('market')
+  }
+
+  function navigateToView(nextView) {
+    if (productId) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('produto')
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+      productRequestRef.current += 1
+      setProductId(null)
+    }
+    setView(nextView)
+  }
+
+  useEffect(() => {
+    if (view === 'market' || !productId) return undefined
+    const url = new URL(window.location.href)
+    url.searchParams.delete('produto')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    productRequestRef.current += 1
+    const frame = window.requestAnimationFrame(() => setProductId(null))
+    return () => window.cancelAnimationFrame(frame)
+  }, [view, productId])
 
   async function saveProductReview(productId, payload) {
     const requestId = productRequestRef.current
@@ -1933,7 +2024,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       if (existing) {
         return current.map((item) =>
           item.id === cartItem.id && (item.selectedFlavor || '') === cartItem.selectedFlavor
-            ? { ...item, cartQuantity: Math.min(item.cartQuantity + 1, item.quantity) }
+            ? { ...item, cartQuantity: Math.min(item.cartQuantity + cartItem.cartQuantity, item.quantity) }
             : item,
         )
       }
@@ -1950,7 +2041,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     const cartItem = buildCartItem(product)
     if (!cartItem) return
     setCart([cartItem])
-    setSelectedProduct(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('produto')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    setProductId(null)
     setView('cart')
     showCartToast(`${product.name} pronto para finalizar`)
   }
@@ -2499,7 +2593,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   const allTabs = [...primaryTabs, ...sellerTabs, ...adminTabs]
-  const pageTitle = allTabs.find(([id]) => id === view)?.[1]
+  const pageTitle = productId && view === 'market' ? 'Produto' : allTabs.find(([id]) => id === view)?.[1]
     || (view === 'profile' ? 'Meu perfil' : view === 'checkout-payment' ? 'Pagamento' : 'Time Out')
 
   const navigation = (
@@ -2511,7 +2605,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
             key={id}
             className={view === id ? 'sidebar-nav-item active' : 'sidebar-nav-item'}
             type="button"
-            onClick={() => setView(id)}
+            onClick={() => navigateToView(id)}
             aria-current={view === id ? 'page' : undefined}
           >
             <Icon size={18} />
@@ -2528,7 +2622,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
               key={id}
               className={view === id ? 'sidebar-nav-item active' : 'sidebar-nav-item'}
               type="button"
-              onClick={() => setView(id)}
+              onClick={() => navigateToView(id)}
               aria-current={view === id ? 'page' : undefined}
             >
               <Icon size={18} />
@@ -2546,7 +2640,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
               key={id}
               className={view === id ? 'sidebar-nav-item active' : 'sidebar-nav-item'}
               type="button"
-              onClick={() => setView(id)}
+              onClick={() => navigateToView(id)}
               aria-current={view === id ? 'page' : undefined}
             >
               <Icon size={18} />
@@ -2573,16 +2667,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       pageTitle={pageTitle}
       cartItemsCount={cartItemsCount}
       cartTotal={cartTotal}
-      onCartClick={canUseMarket ? () => setView('cart') : null}
+      onCartClick={canUseMarket ? () => navigateToView('cart') : null}
       notifications={notifications}
       onNotificationRead={markNotificationRead}
       onHome={() => {
-        setView(canUseMarket ? 'market' : 'access')
+        navigateToView(canUseMarket ? 'market' : 'access')
         if (canUseMarket) refresh()
       }}
     >
 
-      {view === 'market' && canUseMarket && (
+      {view === 'market' && canUseMarket && !productId && (
         <MarketView
           products={products}
           categories={categories}
@@ -2595,6 +2689,34 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onUseRecentSearch={applyRecentSearch}
           currentUserId={user.id}
         />
+      )}
+
+      {view === 'market' && productId && (
+        canUseMarket ? (
+          String(selectedProduct?.id) === productId ? (
+            <ProductDetailPage
+              key={selectedProduct.id}
+              product={selectedProduct}
+              feedback={productFeedback}
+              currentUserId={user.id}
+              onBack={backToMarket}
+              onAdd={addToCart}
+              onBuyNow={buyNow}
+              onReview={saveProductReview}
+              reviewSubmitting={reviewSubmitting}
+            />
+          ) : (
+            <section className="product-detail-state">
+              <button className="detail-back" type="button" onClick={backToMarket}><ArrowRight size={16} /> Voltar à Vitrine</button>
+              <p role="status">{productError || (productDetailsLoading ? 'Carregando produto...' : 'Carregando produto...')}</p>
+            </section>
+          )
+        ) : (
+          <section className="product-detail-state">
+            <h2>Este produto não está disponível neste ambiente</h2>
+            <button className="ghost-button" type="button" onClick={() => { backToMarket(); setView('access') }}>Ver meus ambientes</button>
+          </section>
+        )
       )}
 
       {view === 'cart' && canUseMarket && (
@@ -2792,27 +2914,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       ) : null}
 
       {canUseMarket && cartItemsCount > 0 ? (
-        <button className="floating-cart" type="button" onClick={() => setView('cart')}>
+        <button className="floating-cart" type="button" onClick={() => navigateToView('cart')}>
           <ShoppingCart size={22} />
           <span>{cartItemsCount}</span>
           <strong>{money.format(cartTotal)}</strong>
         </button>
       ) : null}
 
-      {selectedProduct ? (
-        <ProductDetailModal
-          key={`${selectedProduct.id}:${productDetailsLoading ? 'loading' : 'ready'}`}
-          product={selectedProduct}
-          feedback={productFeedback}
-          loading={productDetailsLoading}
-          currentUserId={user.id}
-          onClose={() => { productRequestRef.current += 1; setSelectedProduct(null) }}
-          onAdd={addToCart}
-          onBuyNow={buyNow}
-          onReview={saveProductReview}
-          reviewSubmitting={reviewSubmitting}
-        />
-      ) : null}
     </Shell>
   )
 }
@@ -3013,12 +3121,11 @@ function MarketView({
   )
 }
 
-function ProductDetailModal({
+function ProductDetailPage({
   product,
   feedback,
-  loading,
   currentUserId,
-  onClose,
+  onBack,
   onAdd,
   onBuyNow,
   onReview,
@@ -3033,6 +3140,7 @@ function ProductDetailModal({
   const isUnavailable = product.quantity <= 0 || isOwnProduct
   const myReview = reviews.find((review) => Number(review.user?.id) === Number(currentUserId))
   const [selectedFlavor, setSelectedFlavor] = useState(() => flavors[0]?.name || '')
+  const [quantity, setQuantity] = useState(1)
   const effectiveFlavor = flavors.some((flavor) => flavor.name === selectedFlavor) ? selectedFlavor : (flavors[0]?.name || '')
   const selectedOption = flavors.find((flavor) => flavor.name === effectiveFlavor)
   const selectedUnitPrice = getOptionPrice(product, selectedOption)
@@ -3048,22 +3156,14 @@ function ProductDetailModal({
     await onReview(product.id, reviewForm)
   }
 
-  if (loading) {
-    return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="product-modal product-modal-loading" role="dialog" aria-modal="true" aria-label={`Carregando ${product.name}`}>
-        <button className="icon-button modal-close" type="button" onClick={onClose} title="Fechar"><X size={18} /></button>
-        <p role="status">Carregando detalhes de {product.name}...</p>
-      </section>
-    </div>
-  }
-
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="product-modal" role="dialog" aria-modal="true" aria-label={`Detalhes de ${product.name}`}>
-        <button className="icon-button modal-close" type="button" onClick={onClose} title="Fechar">
-          <X size={18} />
-        </button>
-
+    <section className="product-detail-page" aria-label={`Detalhes de ${product.name}`}>
+      <nav className="product-breadcrumb" aria-label="Caminho do produto">
+        <button type="button" onClick={onBack}>Vitrine</button>
+        <span>/</span>
+        <span>{product.category?.name || 'Produtos'}</span>
+      </nav>
+      <div className="product-detail-grid">
         <div className="product-modal-visual">
           <div className="gallery-main">
             {activeImage ? <img src={activeImage} alt={product.name} /> : <ChefHat size={42} />}
@@ -3091,13 +3191,12 @@ function ProductDetailModal({
             <span className="category-chip">{product.category?.name}</span>
             {discountLabel ? <span className="discount-badge">{discountLabel}</span> : null}
             <h2>{product.name}</h2>
-            <p>{product.description || 'O vendedor ainda não adicionou uma descrição detalhada.'}</p>
           </div>
 
           <div className="rating-summary">
             <RatingStars value={feedback?.averageRating || 0} />
             <strong>{formatRating(feedback?.averageRating)}</strong>
-            <span>{feedback?.reviewsCount || 0} avaliações</span>
+            <a href="#avaliacoes">{feedback?.reviewsCount || 0} avaliações</a>
           </div>
 
           {flavors.length > 0 ? <div className="detail-section">
@@ -3127,6 +3226,8 @@ function ProductDetailModal({
             </div>
           </div>
 
+          <p className="product-local-note"><MapPin size={17} /> Retirada, entrega interna ou ponto de encontro, conforme o pedido.</p>
+
           <div className="modal-purchase-bar">
             <div>
               <strong>{money.format(selectedUnitPrice)}</strong>
@@ -3136,11 +3237,19 @@ function ProductDetailModal({
               ) : null}
               <span>{product.quantity} disponíveis</span>
             </div>
+            <div className="product-quantity">
+              <span>Quantidade</span>
+              <div>
+                <button type="button" aria-label="Diminuir quantidade" onClick={() => setQuantity(Math.max(1, quantity - 1))} disabled={quantity <= 1}>−</button>
+                <output aria-label="Quantidade selecionada">{quantity}</output>
+                <button type="button" aria-label="Aumentar quantidade" onClick={() => setQuantity(Math.min(product.quantity, quantity + 1))} disabled={quantity >= product.quantity}>+</button>
+              </div>
+            </div>
             <div className="purchase-actions">
               <button
                 className="primary-button compact-button"
                 type="button"
-                onClick={() => onBuyNow({ ...product, selectedFlavor: effectiveFlavor, cartUnitPrice: selectedUnitPrice })}
+                onClick={() => onBuyNow({ ...product, selectedFlavor: effectiveFlavor, selectedQuantity: quantity })}
                 disabled={isUnavailable}
               >
                 <CreditCard size={18} />
@@ -3149,19 +3258,24 @@ function ProductDetailModal({
               <button
                 className="ghost-button compact-button"
                 type="button"
-                onClick={() => onAdd({ ...product, selectedFlavor: effectiveFlavor, cartUnitPrice: selectedUnitPrice })}
+                onClick={() => onAdd({ ...product, selectedFlavor: effectiveFlavor, selectedQuantity: quantity })}
                 disabled={isUnavailable}
               >
                 <Plus size={18} />
-                Carrinho
+                Adicionar ao carrinho
               </button>
             </div>
           </div>
 
-          <div className="detail-section">
+          <div className="detail-section product-description">
+            <h3>Descrição</h3>
+            <p>{product.description || 'O vendedor ainda não adicionou uma descrição detalhada.'}</p>
+          </div>
+
+          <div className="detail-section" id="avaliacoes">
             <div className="section-heading compact-heading">
-              <h3>Comentários</h3>
-              {loading ? <span>Carregando...</span> : <span>{reviews.length} registros</span>}
+              <h3>Avaliações e comentários</h3>
+              <span>{reviews.length} registros</span>
             </div>
 
             <div className="review-list">
@@ -3185,7 +3299,7 @@ function ProductDetailModal({
               })}
             </div>
 
-            {!loading && reviews.length === 0 ? (
+            {reviews.length === 0 ? (
               <p className="muted-note">Nenhum cliente avaliou este produto ainda.</p>
             ) : null}
 
@@ -3216,8 +3330,8 @@ function ProductDetailModal({
             )}
           </div>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   )
 }
 
