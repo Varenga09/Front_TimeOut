@@ -2990,6 +2990,8 @@ textarea {
 .option-preview button, .option-preview label { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: #fff; color: var(--text); text-align: left; cursor: pointer; }
 .option-preview button.selected { border-color: var(--primary); background: #eef5fb; }
 .option-preview button span, .option-preview label span { flex: 1; min-width: 0; font-weight: 700; }
+.option-preview label input[type='checkbox'] { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; accent-color: var(--primary); }
+.option-preview button > small, .option-preview label > small { flex: 0 0 auto; white-space: nowrap; }
 .option-preview small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
 .option-preview button img, .option-preview label img { width: 38px; height: 38px; object-fit: cover; border-radius: 4px; }
 .option-preview .option-preview-main-image { width: 100%; max-height: 200px; object-fit: contain; }
