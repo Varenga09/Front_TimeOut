@@ -9,6 +9,7 @@ vi.mock('./api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     patch: vi.fn(),
   },
   getAssetUrl: (path) => path || null,
@@ -277,7 +278,41 @@ describe('Painel da equipe Time Out', () => {
 describe('Navegação e isolamento do catálogo', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.clearAllMocks()
     window.history.replaceState({}, '', '/')
+  })
+
+  test('miniaturas trocam apenas a imagem do produto aberto na sequência suco, coxinha, suco', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: ['/suco-extra.png'], flavors: [{ name: 'Laranja', priceAdjustment: 0 }], price: 5, quantity: 5, seller: { id: 20, name: 'Loja' } }
+    const coxinha = { id: 2, name: 'Coxinha', imageUrl: '/coxinha.png', imageGallery: ['/coxinha-extra.png'], flavors: [{ name: 'Frango', priceAdjustment: 0 }], price: 8, quantity: 5, seller: { id: 20, name: 'Loja' } }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [suco, coxinha] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/products/1': { product: suco }, '/products/1/reviews': { reviews: [{ id: 1, comment: 'Comentário do suco' }], averageRating: 5, reviewsCount: 1 },
+      '/products/2': { product: coxinha }, '/products/2/reviews': { reviews: [{ id: 2, comment: 'Comentário da coxinha' }], averageRating: 4, reviewsCount: 1 },
+    })[url] || {} } }))
+
+    render(createElement(App))
+    await screen.findByRole('button', { name: 'Abrir detalhes de Suco' })
+    for (const [name, image, option, comment, otherImage] of [
+      ['Suco', '/suco-extra.png', 'Laranja', 'Comentário do suco', '/coxinha-extra.png'],
+      ['Coxinha', '/coxinha-extra.png', 'Frango', 'Comentário da coxinha', '/suco-extra.png'],
+      ['Suco', '/suco-extra.png', 'Laranja', 'Comentário do suco', '/coxinha-extra.png'],
+    ]) {
+      fireEvent.click(screen.getByRole('button', { name: `Abrir detalhes de ${name}` }))
+      const dialog = await screen.findByRole('dialog', { name: `Detalhes de ${name}` })
+      const thumbnails = dialog.querySelectorAll('.gallery-thumb')
+      expect(thumbnails).toHaveLength(2)
+      expect([...thumbnails].map((button) => button.querySelector('img').getAttribute('src'))).not.toContain(otherImage)
+      fireEvent.click(thumbnails[1])
+      expect(dialog.querySelector('.gallery-main img')).toHaveAttribute('src', image)
+      expect(dialog).toHaveTextContent(option)
+      expect(dialog).toHaveTextContent(comment)
+      expect(dialog).not.toHaveTextContent(name === 'Suco' ? 'Comentário da coxinha' : 'Comentário do suco')
+      fireEvent.click(dialog.querySelector('.modal-close'))
+    }
   })
 
   test('ignora detalhes atrasados de outro produto e não mostra opções em produto sem sabores', async () => {
@@ -360,6 +395,52 @@ describe('Navegação e isolamento do catálogo', () => {
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/access/notifications/9/read'))
     expect(screen.getByRole('button', { name: 'Solicitações' })).toHaveAttribute('aria-current', 'page')
     expect(window.location.search).toContain('timeoutView=access')
+  })
+})
+
+describe('Galerias no cadastro do vendedor', () => {
+  test('edição troca a galeria por produto e novo cadastro começa sem fotos anteriores', async () => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+    const user = { id: 20, name: 'Vendedor', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const products = [
+      { id: 1, name: 'Suco', description: 'Bebida', seller: { id: 20, name: 'Vendedor' }, imageUrl: '/suco.png', imageGallery: ['/suco-extra.png'], price: 5, quantity: 5, categoryId: 1, isActive: true },
+      { id: 2, name: 'Coxinha', description: 'Salgado', seller: { id: 20, name: 'Vendedor' }, imageUrl: '/coxinha.png', imageGallery: ['/coxinha-extra.png'], price: 8, quantity: 5, categoryId: 1, isActive: true },
+    ]
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products }, '/categories': { categories: [{ id: 1, name: 'Lanches' }] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    api.put.mockResolvedValue({ data: { data: {} } })
+    api.post.mockResolvedValue({ data: { data: {} } })
+
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
+    const gallery = screen.getByLabelText('Fotos extras do detalhe')
+    const edit = (name) => fireEvent.click(screen.getByRole('heading', { name, level: 3 }).closest('article').querySelector('[title="Editar produto"]'))
+    edit('Suco')
+    expect(gallery).toHaveValue('["/suco-extra.png"]')
+    edit('Coxinha')
+    expect(gallery).toHaveValue('["/coxinha-extra.png"]')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(api.put).toHaveBeenCalled())
+    const [url, editedForm] = api.put.mock.calls[0]
+    expect(url).toBe('/products/2')
+    expect(editedForm.get('imageGallery')).toBe('["/coxinha-extra.png"]')
+    expect(editedForm.getAll('images')).toHaveLength(0)
+
+    await waitFor(() => expect(gallery).toHaveValue(''))
+    fireEvent.change(screen.getByPlaceholderText('Coxinha'), { target: { value: 'Bolo novo' } })
+    fireEvent.change(gallery, { target: { value: '/bolo-extra.png' } })
+    fireEvent.change(screen.getByLabelText('Preço base'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Estoque'), { target: { value: '4' } })
+    fireEvent.change(screen.getByLabelText('Categoria'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar produto' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/products', expect.any(FormData)))
+    const createdForm = api.post.mock.calls.find(([path]) => path === '/products')[1]
+    expect(createdForm.get('imageGallery')).toBe('/bolo-extra.png')
   })
 })
 
