@@ -282,6 +282,43 @@ describe('Navegação e isolamento do catálogo', () => {
     window.history.replaceState({}, '', '/')
   })
 
+  test('foto e preço acompanham o sabor; galeria não muda a escolha e carrinho recebe a foto certa', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: ['/extra.png'], flavors: [
+      { id: '11111111-1111-4111-8111-111111111111', name: 'Laranja', priceAdjustment: 0, imageUrl: '/laranja.png' },
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Maracujá', priceAdjustment: 2, imageUrl: '/maracuja.png' },
+      { id: '33333333-3333-4333-8333-333333333333', name: 'Uva', priceAdjustment: 1, imageUrl: null },
+    ], price: 5, quantity: 5, seller: { id: 20, name: 'Loja' } }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [suco] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/products/1': { product: suco }, '/products/1/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 },
+    })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Suco' }))
+    const page = await screen.findByRole('region', { name: 'Detalhes de Suco' })
+    const photo = () => page.querySelector('.gallery-main img')
+    expect(photo()).toHaveAttribute('src', '/laranja.png')
+    fireEvent.click(screen.getByRole('button', { name: /Maracujá/ }))
+    expect(photo()).toHaveAttribute('src', '/maracuja.png')
+    expect(photo()).toHaveAttribute('alt', 'Suco - Maracujá')
+    expect(page).toHaveTextContent('R$ 7,00')
+    fireEvent.click(page.querySelector('.gallery-thumb:nth-child(2)'))
+    expect(photo()).toHaveAttribute('src', '/extra.png')
+    expect(screen.getByRole('button', { name: /Maracujá/ })).toHaveClass('active')
+    fireEvent.click(screen.getByRole('button', { name: /Uva/ }))
+    expect(photo()).toHaveAttribute('src', '/suco.png')
+    fireEvent.click(screen.getByRole('button', { name: /Laranja/ }))
+    expect(photo()).toHaveAttribute('src', '/laranja.png')
+    fireEvent.click(screen.getByRole('button', { name: /Maracujá/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar ao carrinho' }))
+    fireEvent.click(screen.getByTitle('Abrir carrinho'))
+    expect(await screen.findByRole('heading', { name: 'Carrinho' })).toBeInTheDocument()
+    expect(document.querySelector('.cart-item-thumb img')).toHaveAttribute('src', '/maracuja.png')
+    expect(screen.getByText(/Maracujá/)).toBeInTheDocument()
+  })
+
   test('página do produto isola galeria e avaliações na sequência suco, coxinha, suco', async () => {
     const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
     const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: ['/suco-extra.png'], flavors: [{ name: 'Laranja', priceAdjustment: 0 }], price: 5, quantity: 5, seller: { id: 20, name: 'Loja' } }
@@ -471,6 +508,43 @@ describe('Navegação e isolamento do catálogo', () => {
 })
 
 describe('Galerias no cadastro do vendedor', () => {
+  test('edição envia cada foto vinculada ao ID da própria opção e permite remoção', async () => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+    const user = { id: 20, name: 'Vendedor', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const flavors = [
+      { id: '11111111-1111-4111-8111-111111111111', name: 'Laranja', priceAdjustment: 0, imageUrl: '/laranja.png' },
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Maracujá', priceAdjustment: 2, imageUrl: '/maracuja.png' },
+    ]
+    const product = { id: 1, name: 'Suco', description: 'Bebida', seller: { id: 20, name: 'Vendedor' }, imageUrl: '/suco.png', imageGallery: [], flavors, price: 5, quantity: 5, categoryId: 1, isActive: true }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [{ id: 1, name: 'Bebidas' }] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    api.put.mockResolvedValue({ data: { data: {} } })
+    URL.createObjectURL = vi.fn(() => 'blob:foto')
+    URL.revokeObjectURL = vi.fn()
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
+    fireEvent.click(screen.getByTitle('Editar produto'))
+    const controls = document.querySelectorAll('.flavor-image-control')
+    expect(controls).toHaveLength(2)
+    fireEvent.click(controls[0].querySelector('.flavor-image-remove'))
+    const photo = new File(['foto'], 'maracuja-nova.jpg', { type: 'image/jpeg' })
+    fireEvent.change(controls[1].querySelector('input[type="file"]'), { target: { files: [photo] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(api.put).toHaveBeenCalled())
+    const [url, data] = api.put.mock.calls[0]
+    expect(url).toBe('/products/1')
+    expect(data.get('flavorImageIds')).toBe('["22222222-2222-4222-8222-222222222222"]')
+    expect(data.getAll('flavorImages')).toEqual([photo])
+    const savedFlavors = JSON.parse(data.get('flavors'))
+    expect(savedFlavors[0]).toMatchObject({ id: flavors[0].id, name: 'Laranja', removeImage: true })
+    expect(savedFlavors[1]).toMatchObject({ id: flavors[1].id, name: 'Maracujá', priceAdjustment: 2 })
+  })
+
   test('edição troca a galeria por produto e novo cadastro começa sem fotos anteriores', async () => {
     localStorage.clear()
     vi.clearAllMocks()

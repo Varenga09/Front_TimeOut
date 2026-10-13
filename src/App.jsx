@@ -303,9 +303,27 @@ function normalizeProductOption(item) {
   if (!name) return null
 
   return {
+    id: item.id || null,
     name,
     priceAdjustment: parseMoneyValue(item.priceAdjustment ?? item.priceDelta ?? item.additionalPrice ?? 0),
+    imageUrl: item.imageUrl || null,
   }
+}
+
+function newFlavorId() {
+  return crypto.randomUUID()
+}
+
+function getCartImage(item) {
+  if (item.cartImageUrl) return item.cartImageUrl
+  const option = parseProductFlavors(item.flavors).find((flavor) => flavor.name === item.selectedFlavor)
+  return option?.imageUrl || item.imageUrl
+}
+
+function getOrderItemImage(item) {
+  if (item.imageUrl) return item.imageUrl
+  const option = parseProductFlavors(item.product?.flavors).find((flavor) => flavor.name === item.selectedFlavor)
+  return option?.imageUrl || item.product?.imageUrl
 }
 
 function parseMoneyValue(value) {
@@ -1890,6 +1908,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return {
       ...product,
       selectedFlavor,
+      selectedFlavorId: selectedOption?.id || null,
+      cartImageUrl: selectedOption?.imageUrl || product.imageUrl,
       cartUnitPrice,
       cartQuantity: Math.max(1, Math.min(Number(product.selectedQuantity) || 1, Number(product.quantity))),
     }
@@ -2146,9 +2166,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   async function saveProduct(payload, productId = null) {
-    const { imageFile, galleryFiles = [], ...productData } = payload
+    const { imageFile, galleryFiles = [], flavorImageFiles = [], ...productData } = payload
     const requestData = toFormData(productData, 'image', imageFile)
     galleryFiles.forEach((file) => requestData.append('images', file))
+    requestData.append('flavorImageIds', JSON.stringify(flavorImageFiles.map(({ id }) => id)))
+    flavorImageFiles.forEach(({ file }) => requestData.append('flavorImages', file))
 
     try {
       if (productId) {
@@ -2160,8 +2182,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       }
 
       await refresh()
+      return true
     } catch (error) {
       onNotice(getErrorMessage(error))
+      return false
     }
   }
 
@@ -3136,7 +3160,7 @@ function ProductDetailPage({
   const reviews = feedback?.reviews || []
   const flavors = parseProductFlavors(product.flavors)
   const productImages = getProductImages(product)
-  const [activeImage, setActiveImage] = useState(() => productImages[0] || '')
+  const [gallerySelection, setGallerySelection] = useState(null)
   const sellerImage = getAssetUrl(product.seller?.profileImageUrl)
   const isOwnProduct = Number(product.seller?.id || product.userId) === Number(currentUserId)
   const isUnavailable = product.quantity <= 0 || isOwnProduct
@@ -3145,6 +3169,7 @@ function ProductDetailPage({
   const [quantity, setQuantity] = useState(1)
   const effectiveFlavor = flavors.some((flavor) => flavor.name === selectedFlavor) ? selectedFlavor : (flavors[0]?.name || '')
   const selectedOption = flavors.find((flavor) => flavor.name === effectiveFlavor)
+  const activeImage = gallerySelection || getAssetUrl(selectedOption?.imageUrl) || getAssetUrl(product.imageUrl) || productImages[0] || ''
   const selectedUnitPrice = getOptionPrice(product, selectedOption)
   const selectedOriginalPrice = getOptionOriginalPrice(product, selectedOption)
   const discountLabel = formatDiscount(product)
@@ -3168,7 +3193,7 @@ function ProductDetailPage({
       <div className="product-detail-grid">
         <div className="product-modal-visual">
           <div className="gallery-main">
-            {activeImage ? <img src={activeImage} alt={product.name} /> : <ChefHat size={42} />}
+            {activeImage ? <img src={activeImage} alt={gallerySelection || !selectedOption?.imageUrl ? product.name : `${product.name} - ${selectedOption.name}`} /> : <ChefHat size={42} />}
           </div>
 
           {productImages.length > 1 ? (
@@ -3176,9 +3201,9 @@ function ProductDetailPage({
               {productImages.map((image) => (
                 <button
                   key={image}
-                  className={activeImage === image ? 'gallery-thumb active' : 'gallery-thumb'}
+                  className={gallerySelection === image ? 'gallery-thumb active' : 'gallery-thumb'}
                   type="button"
-                  onClick={() => setActiveImage(image)}
+                  onClick={() => setGallerySelection(image)}
                   aria-label={`Ver foto de ${product.name}`}
                 >
                   <img src={image} alt="" />
@@ -3206,10 +3231,10 @@ function ProductDetailPage({
               <div className="flavor-list">
                 {flavors.map((flavor) => (
                   <button
-                    key={flavor.name}
+                    key={flavor.id || flavor.name}
                     className={effectiveFlavor === flavor.name ? 'active' : ''}
                     type="button"
-                    onClick={() => setSelectedFlavor(flavor.name)}
+                    onClick={() => { setSelectedFlavor(flavor.name); setGallerySelection(null) }}
                   >
                     <span>{flavor.name}</span>
                     <small>{formatPriceAdjustment(flavor.priceAdjustment)}</small>
@@ -3392,8 +3417,8 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
             return (
               <article className="line-card" key={`${item.id}-${item.selectedFlavor || 'default'}`}>
                 <div className="cart-item-thumb">
-                  {getAssetUrl(item.imageUrl) ? (
-                    <img src={getAssetUrl(item.imageUrl)} alt="" />
+                  {getAssetUrl(getCartImage(item)) ? (
+                    <img src={getAssetUrl(getCartImage(item))} alt={`${item.name}${item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}`} />
                   ) : (
                     <ChefHat size={20} />
                   )}
@@ -3975,8 +4000,8 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
             {order.items[0] ? (
               <div className="order-preview">
                 <div className="order-preview-image">
-                  {getAssetUrl(order.items[0].product?.imageUrl) ? (
-                    <img src={getAssetUrl(order.items[0].product.imageUrl)} alt="" />
+                  {getAssetUrl(getOrderItemImage(order.items[0])) ? (
+                    <img src={getAssetUrl(getOrderItemImage(order.items[0]))} alt={`${order.items[0].product.name}${order.items[0].selectedFlavor ? ` - ${order.items[0].selectedFlavor}` : ''}`} />
                   ) : (
                     <ChefHat size={20} />
                   )}
@@ -4063,6 +4088,25 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
   )
 }
 
+function FlavorImageControl({ option, onChange }) {
+  const preview = useMemo(() => option.imageFile ? URL.createObjectURL(option.imageFile) : getAssetUrl(option.imageUrl), [option.imageFile, option.imageUrl])
+  useEffect(() => () => { if (option.imageFile && preview) URL.revokeObjectURL(preview) }, [option.imageFile, preview])
+
+  return <div className="flavor-image-control">
+    <div className="flavor-image-preview">
+      {preview ? <img src={preview} alt={`Foto da opção ${option.name || 'sem nome'}`} /> : <ChefHat size={19} />}
+    </div>
+    <label className="flavor-image-upload">
+      {preview ? 'Trocar foto' : 'Adicionar foto'}
+      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+        const file = event.target.files?.[0]
+        if (file) onChange({ imageFile: file, removeImage: false })
+      }} />
+    </label>
+    {preview ? <button type="button" className="flavor-image-remove" onClick={() => onChange({ imageFile: null, imageUrl: null, removeImage: true })}>Remover foto</button> : null}
+  </div>
+}
+
 function SellerProductsView({ products, categories, onSave, onToggle, onDelete }) {
   const emptyForm = {
     name: '',
@@ -4135,7 +4179,7 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
     setForm({
       name: product.name,
       description: product.description || '',
-      flavors: parseProductFlavors(product.flavors),
+      flavors: parseProductFlavors(product.flavors).map((option) => ({ ...option, id: option.id || newFlavorId(), imageFile: null, removeImage: false })),
       price: product.price,
       discountType: product.discountType || '',
       discountValue: product.discountValue || '',
@@ -4153,7 +4197,7 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
 
   async function submit(event) {
     event.preventDefault()
-    await onSave(
+    const saved = await onSave(
       {
         ...form,
         price: parseMoneyValue(form.price),
@@ -4163,10 +4207,13 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
         discountEndsAt: form.discountType ? form.discountEndsAt || '' : '',
         flavors: form.flavors
           .map((option) => ({
+            id: option.id,
             name: option.name.trim(),
             priceAdjustment: parseMoneyValue(option.priceAdjustment),
+            removeImage: Boolean(option.removeImage),
           }))
           .filter((option) => option.name),
+        flavorImageFiles: form.flavors.filter((option) => option.name.trim() && option.imageFile).map((option) => ({ id: option.id, file: option.imageFile })),
         quantity: Number(form.quantity),
         categoryId: Number(form.categoryId || categories[0]?.id),
         isActive: Boolean(form.isActive),
@@ -4174,13 +4221,13 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
       },
       editingProduct?.id,
     )
-    resetForm()
+    if (saved) resetForm()
   }
 
   function addProductOption() {
     setForm((current) => ({
       ...current,
-      flavors: [...current.flavors, { name: '', priceAdjustment: 0 }],
+      flavors: [...current.flavors, { id: newFlavorId(), name: '', priceAdjustment: 0, imageUrl: null, imageFile: null, removeImage: false }],
     }))
   }
 
@@ -4340,7 +4387,7 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
             </button>
           </div>
           {form.flavors.map((option, index) => (
-            <div className="option-row" key={index}>
+            <div className="option-row" key={option.id}>
               <label>
                 Nome da opção
                 <input
@@ -4359,6 +4406,7 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
                   placeholder="0,00"
                 />
               </label>
+              <FlavorImageControl option={option} onChange={(patch) => updateProductOption(index, patch)} />
               <button className="icon-button danger" type="button" onClick={() => removeProductOption(index)} title="Remover opção">
                 <Trash2 size={16} />
               </button>

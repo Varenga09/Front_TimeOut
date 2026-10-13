@@ -2899,6 +2899,37 @@ textarea {
   grid-template-columns: minmax(0, 1fr) 120px 38px;
   gap: 8px;
   align-items: end;
+  padding: 10px 0;
+  border-bottom: 1px solid #e1e7ed;
+}
+
+.flavor-image-control {
+  grid-column: 1 / 3;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.flavor-image-preview {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #d5dfe8;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.flavor-image-preview img { width: 100%; height: 100%; object-fit: cover; }
+.flavor-image-upload, .flavor-image-remove { font-size: 13px; font-weight: 700; color: #0a3555; cursor: pointer; }
+.flavor-image-upload input { display: block; max-width: 210px; font-size: 12px; font-weight: 400; margin-top: 4px; }
+.flavor-image-remove { border: 0; background: none; text-decoration: underline; }
+
+@media (max-width: 600px) {
+  .option-row { grid-template-columns: minmax(0, 1fr) 38px; }
+  .option-row > label:first-child, .flavor-image-control { grid-column: 1 / -1; }
 }
 
 .option-row .icon-button {
