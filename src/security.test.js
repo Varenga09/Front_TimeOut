@@ -319,6 +319,22 @@ describe('Navegação e isolamento do catálogo', () => {
     expect(screen.getByText(/Maracujá/)).toBeInTheDocument()
   })
 
+  test('histórico usa a foto registrada para o sabor comprado', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const order = { id: 12, status: 'delivered', totalPrice: 7, seller: { name: 'Loja', phone: '123' }, customer: user, paymentMethod: 'pix', paymentStatus: 'paid', items: [{ id: 1, product: { name: 'Suco', imageUrl: '/suco.png' }, selectedFlavor: 'Maracujá', imageUrl: '/maracuja.png', quantity: 1, unitPrice: 7, subtotal: 7 }] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [order] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Histórico de compras' }))
+    expect(await screen.findByRole('heading', { name: 'Pedido #12' })).toBeInTheDocument()
+    expect(document.querySelector('.order-preview-image img')).toHaveAttribute('src', '/maracuja.png')
+    expect(screen.getByText('1x Suco - Maracujá')).toBeInTheDocument()
+    expect(screen.getAllByText('R$ 7,00').length).toBeGreaterThan(0)
+  })
+
   test('página do produto isola galeria e avaliações na sequência suco, coxinha, suco', async () => {
     const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
     const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: ['/suco-extra.png'], flavors: [{ name: 'Laranja', priceAdjustment: 0 }], price: 5, quantity: 5, seller: { id: 20, name: 'Loja' } }
