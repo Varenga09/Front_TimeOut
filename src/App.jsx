@@ -719,8 +719,10 @@ function AuthBrandPanel({ title, description, onHome }) {
         <h1>{title}</h1>
         <p>{description}</p>
         <div className="auth-brand-features" aria-label="O que você encontra no Time Out">
-          <span><Store size={18} /> Vitrine do seu ambiente</span>
-          <span><ShoppingCart size={18} /> Pedidos em um só lugar</span>
+          <span><Store size={20} /> Vitrine de produtos</span>
+          <span><ShoppingCart size={20} /> Pedidos em um só lugar</span>
+          <span><BarChart3 size={20} /> Gestão de vendas</span>
+          <span><ShieldCheck size={20} /> Acesso controlado por ambiente</span>
         </div>
       </div>
     </section>
@@ -881,8 +883,8 @@ function LoginScreen({ onSession, onNotice, notice }) {
   return (
     <main className="auth-page">
       <AuthBrandPanel
-        title="Peça e venda no mesmo ambiente."
-        description="Encontre produtos do seu local, acompanhe pedidos e gerencie suas vendas no Time Out."
+        title="Suas vendas e pedidos em um só lugar."
+        description="Cadastre produtos, acompanhe pedidos e compre no seu ambiente com o Time Out."
         onHome={() => {
           setMode('login')
           setRecoveryRequested(false)
@@ -895,7 +897,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
       <form className="auth-form" onSubmit={submit}>
         <div className="form-card">
           <div className="form-heading">
-            <h2>{mode === 'login' ? 'Boas-vindas!' : mode === 'register' ? 'Criar conta' : 'Recuperar senha'}</h2>
+            <h2>{mode === 'login' ? 'Bem-vindo ao Time Out!' : mode === 'register' ? 'Criar conta' : 'Recuperar senha'}</h2>
             <p>
               {mode === 'login'
                 ? 'Informe seu e-mail e senha para acessar o Time Out.'
@@ -1092,14 +1094,6 @@ function LoginScreen({ onSession, onNotice, notice }) {
             </>
           )}
 
-          <div className="security-card">
-            <ShieldCheck size={20} className="security-icon" />
-            <div className="security-content">
-              <strong>Acesso protegido</strong>
-              <span>Sua senha é armazenada de forma protegida e nunca aparece em texto aberto.</span>
-            </div>
-          </div>
-
           {notice ? <div className="notice auth-action-notice" role="alert">{notice}</div> : null}
 
           <button className="primary-button wide cta-button" type="submit" disabled={loading}>
@@ -1138,6 +1132,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
               </button>
             </div>
           )}
+          <p className="auth-security-note"><ShieldCheck size={16} aria-hidden="true" /> Sua senha é armazenada de forma protegida.</p>
         </div>
       </form>
     </main>

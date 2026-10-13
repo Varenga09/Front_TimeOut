@@ -27,7 +27,7 @@ describe('Tela de acesso', () => {
     render(createElement(App))
 
     expect(screen.getByLabelText('Time Out')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Boas-vindas!' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Bem-vindo ao Time Out!' })).toBeInTheDocument()
   })
 
   test('permite alternar entre login e cadastro', () => {
@@ -167,7 +167,7 @@ describe('Tela de acesso', () => {
       code: '123456',
       password: 'SenhaForte#123',
     }))
-    expect(await screen.findByRole('heading', { name: 'Boas-vindas!' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Time Out!' })).toBeInTheDocument()
   })
 
   test('mostra confirmação para conta ainda não verificada', async () => {
