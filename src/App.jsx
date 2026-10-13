@@ -1649,6 +1649,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const productRequestRef = useRef(0)
   const unsavedProductOptionsRef = useRef(false)
   const productListRequestRef = useRef(0)
+  const managedProductRequestRef = useRef(0)
   const autoRefreshRef = useRef(null)
   const marketScrollRef = useRef(0)
   const restoreMarketScrollRef = useRef(false)
@@ -1659,6 +1660,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [productPagination, setProductPagination] = useState({ page: 1, total: 0, totalPages: 1 })
   const [productsLoading, setProductsLoading] = useState(false)
   const [productsLoadingMore, setProductsLoadingMore] = useState(false)
+  const [managedProducts, setManagedProducts] = useState([])
+  const [managedProductPagination, setManagedProductPagination] = useState({ page: 1, total: 0, totalPages: 1 })
+  const [managedProductsLoading, setManagedProductsLoading] = useState(false)
+  const [managedProductsLoadingMore, setManagedProductsLoadingMore] = useState(false)
   const [filters, setFilters] = useState({ search: '', categoryId: '' })
   const filtersRef = useRef(filters)
   const [userFilters, setUserFilters] = useState({ search: '', role: '', page: 1, limit: 20 })
@@ -1779,6 +1784,35 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       onNotice(getErrorMessage(error))
     } finally {
       setProductsLoadingMore(false)
+    }
+  }
+
+  const loadManagedProducts = useCallback(async (page = 1) => {
+    const requestId = ++managedProductRequestRef.current
+    const params = { page, limit: 10 }
+    if (!isEnvironmentAdmin) params.sellerId = user.id
+    if (page === 1) setManagedProductsLoading(true)
+    try {
+      const response = await api.get('/products', { params })
+      if (requestId === managedProductRequestRef.current) {
+        const result = response.data.data
+        setManagedProducts((current) => page === 1 ? result.products : [...current, ...result.products.filter((product) => !current.some((item) => item.id === product.id))])
+        setManagedProductPagination({ page, total: result.total ?? result.products.length, totalPages: result.totalPages ?? 1 })
+      }
+    } finally {
+      if (page === 1 && requestId === managedProductRequestRef.current) setManagedProductsLoading(false)
+    }
+  }, [isEnvironmentAdmin, user.id])
+
+  async function loadMoreManagedProducts() {
+    if (managedProductsLoadingMore || managedProductPagination.page >= managedProductPagination.totalPages) return
+    setManagedProductsLoadingMore(true)
+    try {
+      await loadManagedProducts(managedProductPagination.page + 1)
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    } finally {
+      setManagedProductsLoadingMore(false)
     }
   }
 
@@ -1944,6 +1978,12 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
     return () => window.clearTimeout(timer)
   }, [applicationPage, filters, userFilters, financialQuery, adminFinancialQuery, platformFinancialQuery, user.environmentId, user.role, refresh, loadProducts, loadUsers, loadFinancialOverview, loadAdminPayoutOverview, loadPlatformPayoutOverview, loadAccessData, onNotice])
+
+  useEffect(() => {
+    if (view !== 'seller-products' && view !== 'sales-dashboard') return undefined
+    const timer = window.setTimeout(() => { loadManagedProducts().catch((error) => onNotice(getErrorMessage(error))) }, 0)
+    return () => window.clearTimeout(timer)
+  }, [view, loadManagedProducts, onNotice, user.environmentId])
 
   const sellerId = cart[0]?.seller.id
   const cartTotal = cart.reduce((sum, item) => sum + getCartUnitPrice(item) * item.cartQuantity, 0)
@@ -2311,7 +2351,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         onNotice('Produto criado')
       }
 
-      await refresh()
+      await Promise.all([refresh(), loadManagedProducts()])
       return true
     } catch (error) {
       onNotice(getErrorMessage(error))
@@ -2323,7 +2363,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       await api.delete(`/products/${productId}`)
       onNotice('Produto removido')
-      await refresh()
+      await Promise.all([refresh(), loadManagedProducts()])
     } catch (error) {
       onNotice(getErrorMessage(error))
     }
@@ -2333,7 +2373,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     try {
       await api.patch(`/products/${product.id}/status`, { isActive: !product.isActive })
       onNotice(product.isActive ? 'Produto pausado' : 'Produto ativado')
-      await refresh()
+      await Promise.all([refresh(), loadManagedProducts()])
     } catch (error) {
       onNotice(getErrorMessage(error))
     }
@@ -2925,7 +2965,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       )}
 
       {view === 'sales-dashboard' && (
-        <SalesDashboard orders={sellerOrders} products={products.filter((product) => product.seller.id === user.id || isEnvironmentAdmin)} />
+        <SalesDashboard orders={sellerOrders} products={managedProducts} />
       )}
 
       {view === 'seller-orders' && (
@@ -2938,11 +2978,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
       {view === 'seller-products' && (
         <SellerProductsView
-          products={products.filter((product) => product.seller.id === user.id || isEnvironmentAdmin)}
-          productsLoading={productsLoading}
-          pagination={productPagination}
-          loadingMore={productsLoadingMore}
-          onLoadMore={loadMoreProducts}
+          products={managedProducts}
+          productsLoading={managedProductsLoading}
+          pagination={managedProductPagination}
+          loadingMore={managedProductsLoadingMore}
+          onLoadMore={loadMoreManagedProducts}
           categories={categories}
           onSave={saveProduct}
           onToggle={toggleProduct}

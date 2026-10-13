@@ -648,7 +648,7 @@ describe('Galerias no cadastro do vendedor', () => {
     api.put.mockResolvedValue({ data: { data: {} } })
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
-    fireEvent.click(screen.getByTitle('Editar produto'))
+    fireEvent.click(await screen.findByTitle('Editar produto'))
     fireEvent.click(screen.getByRole('button', { name: 'Configurar opções e adicionais' }))
     expect(screen.getByRole('heading', { name: 'Opções e adicionais' })).toBeInTheDocument()
     expect(screen.getByText('R$ 10,00 por unidade')).toBeInTheDocument()
@@ -690,7 +690,7 @@ describe('Galerias no cadastro do vendedor', () => {
     URL.revokeObjectURL = vi.fn()
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
-    fireEvent.click(screen.getByTitle('Editar produto'))
+    fireEvent.click(await screen.findByTitle('Editar produto'))
     fireEvent.click(screen.getByRole('button', { name: 'Configurar opções e adicionais' }))
     const controls = document.querySelectorAll('.flavor-image-control')
     expect(controls).toHaveLength(3)
@@ -732,6 +732,7 @@ describe('Galerias no cadastro do vendedor', () => {
 
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
+    await screen.findAllByTitle('Editar produto')
     const gallery = screen.getByLabelText('Fotos extras do detalhe')
     const edit = (name) => fireEvent.click(screen.getByRole('heading', { name, level: 3 }).closest('article').querySelector('[title="Editar produto"]'))
     edit('Suco')
@@ -783,6 +784,7 @@ describe('Catálogo paginado', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
   })
 
   test('buscar produtos não recarrega pedidos, planos e notificações', async () => {
@@ -822,5 +824,22 @@ describe('Catálogo paginado', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver mais produtos (1 de 2)' }))
     expect(await screen.findByRole('button', { name: 'Abrir detalhes de Coxinha' })).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/products', { params: { page: 2, limit: 10 } })
+  })
+
+  test('pesquisa da Vitrine não esconde produtos do vendedor', async () => {
+    const user = { id: 7, name: 'Vendedor', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const suco = { id: 1, name: 'Suco', price: 5, quantity: 2, seller: { id: 20, name: 'Loja' } }
+    const sushi = { id: 2, name: 'Sushi', price: 20, quantity: 5, isActive: true, seller: { id: 7, name: 'Vendedor' } }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url, config) => ({ data: { data: url === '/products'
+      ? { products: config?.params?.sellerId === 7 ? [sushi] : [suco], total: 1, totalPages: 1 }
+      : ({ '/auth/me': { user }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] }, '/coupons': { coupons: [] }, '/payments/settings': { settings: {} }, '/payments/payout-account': { summary: {}, transactions: [] }, '/plans': { plans: [] }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] } })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Vitrine' }))
+    await screen.findByRole('button', { name: 'Abrir detalhes de Suco' })
+    fireEvent.change(screen.getByPlaceholderText('Buscar produto'), { target: { value: 'Suco' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Meus produtos' }))
+    expect(await screen.findByRole('heading', { name: 'Sushi' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('/products', { params: { page: 1, limit: 10, sellerId: 7 } })
   })
 })
