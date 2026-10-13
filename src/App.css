@@ -1845,6 +1845,25 @@ textarea {
   grid-template-columns: 54px minmax(0, 1fr) auto auto;
 }
 
+.user-line > div:nth-child(2) {
+  min-width: 0;
+}
+
+.user-line > div:nth-child(2) p {
+  overflow-wrap: anywhere;
+}
+
+.user-line .mini-contact {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.user-line .mini-contact svg {
+  flex: 0 0 auto;
+}
+
 .category-line {
   grid-template-columns: 54px minmax(0, 1fr) auto;
 }
