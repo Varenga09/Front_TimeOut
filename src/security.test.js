@@ -190,3 +190,36 @@ describe('Recebimentos simulados', () => {
     expect(screen.queryByText(/agência/i)).not.toBeInTheDocument()
   })
 })
+
+describe('Painel da equipe Time Out', () => {
+  test('abre o painel interno para platform_admin após um novo login', async () => {
+    const user = {
+      id: 50,
+      name: 'Equipe Time Out',
+      email: 'equipe@timeout.test',
+      role: 'platform_admin',
+      environmentId: null,
+      emailVerifiedAt: new Date().toISOString(),
+    }
+    localStorage.getItem.mockReturnValue(JSON.stringify({ token: 'token-teste', user }))
+    api.get.mockImplementation(async (url) => {
+      const payloads = {
+        '/auth/me': { user },
+        '/access/platform/dashboard': {
+          applications: [],
+          environments: [],
+          administrators: [],
+          auditLogs: [],
+          identityVerificationMode: 'mock',
+        },
+        '/access/notifications': { notifications: [] },
+      }
+      return { data: { data: payloads[url] || {} } }
+    })
+
+    render(createElement(App))
+
+    expect(await screen.findByRole('heading', { name: 'Equipe Time Out' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Equipe Time Out' })).toHaveAttribute('aria-current', 'page')
+  })
+})
