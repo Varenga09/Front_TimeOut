@@ -404,6 +404,29 @@ describe('Navegação e isolamento do catálogo', () => {
     expect(window.location.search).toBe('')
   })
 
+  test('Comprar agora leva exatamente a variação e quantidade escolhidas ao carrinho', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const product = { id: 3, name: 'Coxinha', price: 6.5, quantity: 3, flavors: [{ name: 'Tradicional', priceAdjustment: 0 }, { name: 'Especial', priceAdjustment: 2 }], seller: { id: 20, name: 'Loja' } }
+    window.history.replaceState({}, '', '/?produto=3')
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/products/3': { product }, '/products/3/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 },
+      '/payments/settings/sellers/20': { settings: {} },
+    })[url] || {} } }))
+    render(createElement(App))
+    await screen.findByRole('region', { name: 'Detalhes de Coxinha' })
+    fireEvent.click(screen.getByRole('button', { name: /Especial/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar quantidade' }))
+    expect(screen.getByRole('region', { name: 'Detalhes de Coxinha' }).querySelector('.modal-purchase-bar strong')).toHaveTextContent('R$ 8,50')
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar agora' }))
+    expect(window.location.search).toBe('')
+    expect(screen.getByRole('heading', { name: 'Carrinho', level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('R$ 8,50 cada - Especial')).toBeInTheDocument()
+    expect(screen.getAllByText('R$ 17,00').length).toBeGreaterThan(0)
+  })
+
   test('logo retorna à vitrine sem encerrar sessão ou carrinho', async () => {
     const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
     localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
