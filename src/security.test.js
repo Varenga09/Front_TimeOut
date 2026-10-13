@@ -226,6 +226,61 @@ describe('Recebimentos simulados', () => {
   })
 })
 
+describe('Navegação e filtros da interface', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+  })
+
+  test('vendedor alterna período e filtra cupons sem perder a lista', async () => {
+    const user = { id: 7, name: 'Vendedor', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const coupons = [
+      { id: 1, code: 'BROWNIE10', description: 'Brownie', discountType: 'percentage', discountValue: 10, isActive: true, usedCount: 0 },
+      { id: 2, code: 'SUCODESCONTO', description: 'Suco', discountType: 'fixed', discountValue: 2, isActive: false, usedCount: 0 },
+    ]
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] },
+      '/coupons': { coupons }, '/payments/settings': { settings: {} }, '/plans': { plans: [] }, '/payments/payout-account': { account: { status: 'not_connected' }, summary: {}, transactions: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    render(createElement(App))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Visão geral' }))
+    expect(await screen.findByRole('heading', { name: 'Receita líquida dos últimos 7 dias' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Período'), { target: { value: '14' } })
+    expect(screen.getByRole('heading', { name: 'Receita líquida dos últimos 14 dias' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cupons' }))
+    expect(await screen.findByRole('heading', { name: 'BROWNIE10' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ativos' }))
+    expect(screen.queryByRole('heading', { name: 'SUCODESCONTO' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Todos' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar cupom' }), { target: { value: 'suco' } })
+    expect(screen.getByRole('heading', { name: 'SUCODESCONTO' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'BROWNIE10' })).not.toBeInTheDocument()
+  })
+
+  test('notificações têm página própria e marcam todas como lidas', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const notifications = [{ id: 1, title: 'Pedido atualizado', message: 'Pedido em preparo', resourceType: 'order', targetView: 'my-orders', readAt: null, createdAt: new Date().toISOString() }]
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications },
+    })[url] || {} } }))
+    api.patch.mockResolvedValue({ data: { data: {} } })
+    render(createElement(App))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Notificações' }))
+    expect(await screen.findByText('Pedido em preparo')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar todas como lidas' }))
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/access/notifications/1/read'))
+    expect(screen.getByRole('button', { name: 'Marcar todas como lidas' })).toBeDisabled()
+  })
+})
+
 describe('Painel da equipe Time Out', () => {
   test('abre o painel interno para platform_admin após um novo login', async () => {
     const user = {

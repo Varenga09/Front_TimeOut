@@ -1421,6 +1421,8 @@ function Shell({
   notifications = [],
   onNotificationRead,
   onHome,
+  activeView,
+  onNavigate,
   children,
 }) {
   const user = session.user
@@ -1429,6 +1431,8 @@ function Shell({
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const notificationsRef = useRef(null)
   const unreadCount = notifications.filter((item) => !item.readAt).length
+  const sellerWorkspace = ['sales-dashboard', 'seller-orders', 'sales-history', 'seller-products', 'seller-coupons', 'seller-payments', 'seller-financial'].includes(activeView)
+    || (activeView === 'profile' && ['seller', 'admin', 'environment_admin'].includes(user.role))
 
   useEffect(() => {
     if (!notificationsOpen) return undefined
@@ -1463,7 +1467,7 @@ function Shell({
   }
 
   return (
-    <main className="app-shell">
+    <main className={sellerWorkspace ? 'app-shell seller-shell' : 'app-shell buyer-shell'}>
       {mobileMenuOpen ? (
         <button
           className="sidebar-backdrop"
@@ -1548,6 +1552,18 @@ function Shell({
             <p className="eyebrow">{user.environment?.name || 'Selecione um ambiente'}</p>
             <h1>{pageTitle}</h1>
           </div>
+          {!sellerWorkspace ? (
+            <nav className="topbar-navigation" aria-label="Navegação de compras">
+              {[
+                ['market', 'Vitrine'],
+                ['my-orders', 'Meus pedidos'],
+                ['access', 'Solicitações'],
+                ['plans', 'Planos'],
+              ].map(([id, label]) => (
+                <button key={id} type="button" className={activeView === id ? 'active' : ''} onClick={() => onNavigate(id)} aria-label={`Ir para ${label}`} aria-current={activeView === id ? 'page' : undefined}>{label}</button>
+              ))}
+            </nav>
+          ) : null}
           <div className="topbar-actions" ref={notificationsRef}>
             <button className="notification-button" type="button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Abrir notificações">
               <Bell size={16} />
@@ -1561,6 +1577,9 @@ function Shell({
               </div>
               {cartItemsCount > 0 ? <b>{cartItemsCount}</b> : null}
             </button> : null}
+            <button className="topbar-profile-button" type="button" onClick={onProfileClick} aria-label="Abrir perfil">
+              {profileImage ? <img src={profileImage} alt="" /> : user.name?.charAt(0)?.toLocaleUpperCase('pt-BR') || <UserRound size={18} />}
+            </button>
             {notificationsOpen ? (
               <div className="notifications-popover">
               <div className="section-heading compact-heading"><h3>Notificações</h3><span>{unreadCount} não lidas</span></div>
@@ -1574,6 +1593,7 @@ function Shell({
                 ))}
                 {notifications.length === 0 ? <p className="muted-note">Nenhuma notificação.</p> : null}
               </div>
+              <button className="ghost-button wide" type="button" onClick={() => { setNotificationsOpen(false); onNavigate('notifications') }}>Ver todas as notificações</button>
               </div>
             ) : null}
           </div>
@@ -2710,6 +2730,14 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     } catch (error) { onNotice(getErrorMessage(error)) }
   }
 
+  async function markAllNotificationsRead() {
+    const unread = notifications.filter((item) => !item.readAt)
+    const results = await Promise.allSettled(unread.map((item) => api.patch(`/access/notifications/${item.id}/read`)))
+    const readIds = new Set(unread.filter((_, index) => results[index].status === 'fulfilled').map((item) => item.id))
+    setNotifications((current) => current.map((item) => readIds.has(item.id) ? { ...item, readAt: new Date().toISOString() } : item))
+    if (readIds.size !== unread.length) onNotice('Algumas notificações não puderam ser marcadas como lidas.')
+  }
+
   async function revealApplicationCpf(type, id, reason) {
     try {
       const response = await api.get(`/access/applications/${type}/${id}/cpf`, { params: { reason } })
@@ -2760,8 +2788,9 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           ['my-orders', 'Histórico de compras', History],
           ['plans', 'Planos', Crown],
           ['access', 'Solicitações', FileText],
+          ['notifications', 'Notificações', Bell],
         ]
-      : [['access', 'Solicitações', FileText]]
+      : [['access', 'Solicitações', FileText], ['notifications', 'Notificações', Bell]]
   const sellerTabs = []
   const adminTabs = []
 
@@ -2870,6 +2899,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         navigateToView(canUseMarket ? 'market' : 'access')
         if (canUseMarket) refresh()
       }}
+      activeView={view}
+      onNavigate={navigateToView}
     >
 
       {view === 'market' && canUseMarket && !productId && (
@@ -2958,6 +2989,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onJoinEnvironment={joinEnvironment}
           onSwitchEnvironment={switchEnvironment}
         />
+      )}
+
+      {view === 'notifications' && (
+        <NotificationsView notifications={notifications} onOpen={markNotificationRead} onMarkAllRead={markAllNotificationsRead} />
       )}
 
       {view === 'my-orders' && canUseMarket && (
@@ -3610,6 +3645,40 @@ function RatingStars({ value, onChange }) {
   )
 }
 
+function NotificationsView({ notifications, onOpen, onMarkAllRead }) {
+  const [filter, setFilter] = useState('all')
+  const filtered = notifications.filter((item) => filter === 'all'
+    || (filter === 'unread' && !item.readAt)
+    || (filter === 'requests' && ['environment_application', 'seller_application', 'membership'].includes(item.resourceType))
+    || (filter === 'orders' && item.resourceType === 'order'))
+  const unreadCount = notifications.filter((item) => !item.readAt).length
+
+  return (
+    <section className="main-column full notifications-page">
+      <div className="section-heading">
+        <div><h2>Notificações</h2><p className="section-subtitle">Atualizações do seu ambiente e dos seus pedidos.</p></div>
+        <button className="ghost-button" type="button" onClick={onMarkAllRead} disabled={!unreadCount}><Check size={16} /> Marcar todas como lidas</button>
+      </div>
+      <div className="order-filters" aria-label="Filtrar notificações">
+        {[['all', `Todas (${notifications.length})`], ['unread', `Não lidas (${unreadCount})`], ['requests', 'Solicitações'], ['orders', 'Pedidos']].map(([value, label]) => (
+          <button key={value} type="button" className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{label}</button>
+        ))}
+      </div>
+      <div className="notifications-page-list">
+        {filtered.map((item) => {
+          const Icon = item.resourceType === 'order' ? ShoppingCart : item.resourceType?.includes('application') ? FileText : Bell
+          return <button key={item.id} className={item.readAt ? 'notification-row read' : 'notification-row'} type="button" onClick={() => onOpen(item)}>
+            <span className="notification-row-icon"><Icon size={20} /></span>
+            <span className="notification-row-copy"><strong>{item.title}</strong><span>{item.message}</span></span>
+            <time>{formatDate(item.createdAt)}</time>
+          </button>
+        })}
+        {filtered.length === 0 ? <EmptyState text="Nenhuma notificação neste filtro." /> : null}
+      </div>
+    </section>
+  )
+}
+
 function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, onSubmit }) {
   const [form, setForm] = useState({
     paymentMethod: 'pix',
@@ -4015,19 +4084,24 @@ function PaymentSettingsView({ settings, overview, onSave, onConnect, query, onQ
 
 function SalesDashboard({ orders, products }) {
   const [activeDayIndex, setActiveDayIndex] = useState(6)
-  const deliveredOrders = orders.filter((order) => order.status === 'delivered')
+  const [periodDays, setPeriodDays] = useState(7)
+  const periodStart = new Date()
+  periodStart.setHours(0, 0, 0, 0)
+  periodStart.setDate(periodStart.getDate() - (periodDays - 1))
+  const periodOrders = orders.filter((order) => new Date(order.createdAt) >= periodStart)
+  const deliveredOrders = periodOrders.filter((order) => order.status === 'delivered')
   const grossTotal = deliveredOrders.reduce((sum, order) => sum + Number(order.grossSalesAmount || order.totalPrice), 0)
   const platformFeeTotal = deliveredOrders.reduce((sum, order) => sum + getOrderPlatformFee(order), 0)
   const sellerNetTotal = deliveredOrders.reduce((sum, order) => sum + getOrderSellerNet(order), 0)
-  const pendingOrders = orders.filter((order) => ['pending', 'accepted', 'preparing', 'ready'].includes(order.status)).length
+  const pendingOrders = periodOrders.filter((order) => ['pending', 'accepted', 'preparing', 'ready'].includes(order.status)).length
   const averageTicket = deliveredOrders.length ? grossTotal / deliveredOrders.length : 0
-  const lastSevenDays = Array.from({ length: 7 }).map((_, index) => {
+  const periodDates = Array.from({ length: periodDays }).map((_, index) => {
     const date = new Date()
     date.setHours(0, 0, 0, 0)
-    date.setDate(date.getDate() - (6 - index))
+    date.setDate(date.getDate() - (periodDays - 1 - index))
     return date
   })
-  const dailySales = lastSevenDays.map((date) => {
+  const dailySales = periodDates.map((date) => {
     const nextDate = new Date(date)
     nextDate.setDate(date.getDate() + 1)
     const total = deliveredOrders
@@ -4079,23 +4153,19 @@ function SalesDashboard({ orders, products }) {
   }
 
   return (
-    <section className="content-grid two-columns">
-      <div className="main-column">
-        <div className="section-heading">
-          <div>
-            <h2>Resumo de vendas</h2>
-            <p className="section-subtitle">Acompanhe o desempenho dos últimos sete dias.</p>
-          </div>
-          <div className="heading-actions">
-            <span>{orders.length} pedidos recebidos</span>
-            <button className="export-button" type="button" onClick={exportSalesReport}>
-              <Download size={15} />
-              Exportar
-            </button>
-          </div>
+    <section className="sales-dashboard-page">
+      <div className="section-heading">
+        <div>
+          <h2>Visão geral</h2>
+          <p className="section-subtitle">Acompanhe o desempenho da sua loja.</p>
         </div>
+        <div className="heading-actions">
+          <label className="period-select"><History size={16} /><span className="sr-only">Período</span><select value={periodDays} onChange={(event) => { setPeriodDays(Number(event.target.value)); setActiveDayIndex(Number(event.target.value) - 1) }}><option value={7}>Últimos 7 dias</option><option value={14}>Últimos 14 dias</option></select></label>
+          <button className="export-button" type="button" onClick={exportSalesReport}><Download size={15} /> Exportar</button>
+        </div>
+      </div>
 
-        <div className="metrics-grid">
+      <div className="metrics-grid">
           <article className="metric-card">
             <span>Faturamento bruto</span>
             <strong>{money.format(grossTotal)}</strong>
@@ -4120,14 +4190,15 @@ function SalesDashboard({ orders, products }) {
             <span>Produtos cadastrados</span>
             <strong>{products.length}</strong>
           </article>
-        </div>
+      </div>
 
+      <div className="sales-dashboard-lower">
         <div className="chart-card">
           <div className="section-heading compact-heading">
-            <h3>Receita líquida dos últimos 7 dias</h3>
+            <h3>Receita líquida dos últimos {periodDays} dias</h3>
             <span>{money.format(sellerNetTotal)}</span>
           </div>
-          <div className="bar-chart">
+          <div className="bar-chart" style={{ '--chart-days': periodDays }}>
             {dailySales.map((day) => (
               <button
                 className={activeDayIndex === dailySales.indexOf(day) ? 'bar-column active' : 'bar-column'}
@@ -4149,9 +4220,7 @@ function SalesDashboard({ orders, products }) {
             <span>Receita líquida: <strong>{money.format(dailySales[activeDayIndex]?.total || 0)}</strong></span>
           </div>
         </div>
-      </div>
-
-      <aside className="side-panel">
+        <aside className="side-panel">
         <PanelHeader icon={BarChart3} title="Mais vendidos" />
         <div className="ranking-list">
           {topProducts.map((product, index) => (
@@ -4165,7 +4234,8 @@ function SalesDashboard({ orders, products }) {
           ))}
         </div>
         {topProducts.length === 0 ? <p>Nenhuma venda entregue ainda.</p> : null}
-      </aside>
+        </aside>
+      </div>
     </section>
   )
 }
@@ -4173,6 +4243,10 @@ function SalesDashboard({ orders, products }) {
 function OrdersView({ orders, mode, onCancel, onStatus, title }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [orderSearch, setOrderSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [sortOrder, setSortOrder] = useState('newest')
+  const isSalesHistory = title === 'Histórico de vendas'
   const normalizedSearch = orderSearch.trim().toLocaleLowerCase('pt-BR')
   const visibleOrders = orders.filter((order) => {
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
@@ -4183,8 +4257,14 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
       ...order.items.map((item) => item.product?.name),
     ].some((value) => String(value || '').toLocaleLowerCase('pt-BR').includes(normalizedSearch))
 
-    return matchesStatus && matchesSearch
-  })
+    const createdAt = new Date(order.createdAt)
+    const matchesFrom = !isSalesHistory || !dateFrom || createdAt >= new Date(`${dateFrom}T00:00:00`)
+    const matchesTo = !isSalesHistory || !dateTo || createdAt <= new Date(`${dateTo}T23:59:59.999`)
+
+    return matchesStatus && matchesSearch && matchesFrom && matchesTo
+  }).sort((first, second) => sortOrder === 'oldest'
+    ? new Date(first.createdAt) - new Date(second.createdAt)
+    : new Date(second.createdAt) - new Date(first.createdAt))
 
   return (
     <section className="main-column full">
@@ -4223,6 +4303,14 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
         ))}
         <span>{visibleOrders.length} de {orders.length}</span>
       </div>
+
+      {isSalesHistory ? (
+        <div className="sales-history-controls">
+          <label>De<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+          <label>Até<input type="date" min={dateFrom || undefined} value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+          <label>Ordenação<select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="newest">Mais recentes</option><option value="oldest">Mais antigos</option></select></label>
+        </div>
+      ) : null}
 
       <div className="order-grid">
         {visibleOrders.map((order) => (
@@ -4894,6 +4982,19 @@ function CouponManagerView({ coupons, onSave, onToggle, onDelete }) {
     isActive: true,
   }
   const [form, setForm] = useState(emptyForm)
+  const [couponFilter, setCouponFilter] = useState('all')
+  const [couponSearch, setCouponSearch] = useState('')
+  const [now] = useState(() => Date.now())
+  const visibleCoupons = coupons.filter((coupon) => {
+    const scheduled = coupon.startsAt && new Date(coupon.startsAt).getTime() > now
+    const expired = coupon.endsAt && new Date(coupon.endsAt).getTime() < now
+    const matchesFilter = couponFilter === 'all'
+      || (couponFilter === 'active' && coupon.isActive && !scheduled && !expired)
+      || (couponFilter === 'scheduled' && coupon.isActive && scheduled)
+      || (couponFilter === 'expired' && expired)
+    const query = couponSearch.trim().toLocaleLowerCase('pt-BR')
+    return matchesFilter && (!query || `${coupon.code} ${coupon.description || ''}`.toLocaleLowerCase('pt-BR').includes(query))
+  })
 
   async function submit(event) {
     event.preventDefault()
@@ -4935,8 +5036,17 @@ function CouponManagerView({ coupons, onSave, onToggle, onDelete }) {
           <span>{coupons.length} cupons</span>
         </div>
 
+        <div className="coupon-toolbar">
+          <div className="order-filters" aria-label="Filtrar cupons">
+            {[['all', 'Todos'], ['active', 'Ativos'], ['scheduled', 'Agendados'], ['expired', 'Expirados']].map(([value, label]) => (
+              <button key={value} type="button" className={couponFilter === value ? 'active' : ''} onClick={() => setCouponFilter(value)}>{label}</button>
+            ))}
+          </div>
+          <div className="search-field"><Search size={17} /><input value={couponSearch} onChange={(event) => setCouponSearch(event.target.value)} placeholder="Buscar cupom" aria-label="Buscar cupom" /></div>
+        </div>
+
         <div className="stack">
-          {coupons.map((coupon) => (
+          {visibleCoupons.map((coupon) => (
             <article className="line-card coupon-line" key={coupon.id}>
               <div className="product-thumb">
                 <Percent size={18} />
@@ -4969,7 +5079,7 @@ function CouponManagerView({ coupons, onSave, onToggle, onDelete }) {
           ))}
         </div>
 
-        {coupons.length === 0 ? <EmptyState text="Nenhum cupom criado ainda." /> : null}
+        {visibleCoupons.length === 0 ? <EmptyState text={coupons.length ? 'Nenhum cupom encontrado neste filtro.' : 'Nenhum cupom criado ainda.'} /> : null}
       </div>
 
       <form className="side-panel" onSubmit={submit}>
@@ -5706,10 +5816,10 @@ function ProfileView({
   }
 
   return (
-    <section className="content-grid two-columns">
+    <section className="content-grid two-columns profile-page">
       <div className="main-column">
         <div className="section-heading">
-          <h2>Perfil</h2>
+          <h2>Meu perfil</h2>
           <span>{roleLabel(user.role)}</span>
         </div>
         <article className="profile-card">
@@ -5758,8 +5868,7 @@ function ProfileView({
         ) : null}
       </div>
 
-      <form className="side-panel" onSubmit={submit}>
-        <PanelHeader icon={UserRound} title="Editar perfil" />
+      <aside className="profile-places-panel">
         <div className="detail-section">
           <PanelHeader icon={Building2} title="Meus lugares" />
           <div className="places-list">
@@ -5814,6 +5923,10 @@ function ProfileView({
             <FileText size={17} /> Abrir formulário de solicitação
           </button>
         </div>
+      </aside>
+
+      <form className="side-panel profile-edit-panel" onSubmit={submit}>
+        <PanelHeader icon={UserRound} title="Editar perfil" />
 
         <div className="image-picker">
           <div className="image-preview avatar-preview">
