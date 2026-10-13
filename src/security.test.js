@@ -400,6 +400,7 @@ describe('Navegação e isolamento do catálogo', () => {
     window.history.replaceState({ marketScroll: 120 }, '', '/')
     fireEvent.popState(window, { state: { marketScroll: 120 } })
     expect(await screen.findByPlaceholderText('Buscar produto')).toHaveValue('suco')
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith(0, 120))
     expect(window.location.search).toBe('')
   })
 
