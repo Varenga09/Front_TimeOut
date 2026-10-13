@@ -802,6 +802,7 @@ describe('Catálogo paginado', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Buscar produto'), { target: { value: 'suco' } })
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/products', { params: { page: 1, limit: 10, search: 'suco' } }))
+    fireEvent.change(screen.getByPlaceholderText('Buscar produto'), { target: { value: 'suco' } })
     expect(api.get.mock.calls).toHaveLength(requestsBefore + 1)
     expect(api.get.mock.calls.filter(([url]) => url === '/orders/my-orders')).toHaveLength(ordersBefore)
     expect(api.get.mock.calls.filter(([url]) => url === '/plans')).toHaveLength(plansBefore)

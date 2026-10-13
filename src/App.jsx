@@ -2830,6 +2830,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           categories={categories}
           filters={filters}
           onFilter={(next) => {
+            if (next.search === filters.search && next.categoryId === filters.categoryId) return
             productListRequestRef.current += 1
             setProductsLoading(true)
             setProducts([])
