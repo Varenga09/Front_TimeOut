@@ -88,6 +88,51 @@ describe('Tela de acesso', () => {
     expect(passwordInput).toHaveAttribute('type', 'password')
   })
 
+  test('envia login sem perder os campos quando a API recusa as credenciais', async () => {
+    api.post.mockRejectedValue({ response: { status: 401, data: { message: 'Credenciais inválidas' } } })
+    render(createElement(App))
+
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@timeout.test' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'senha-de-teste' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar no Time Out' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/login', {
+      email: 'pessoa@timeout.test',
+      password: 'senha-de-teste',
+    }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Credenciais inválidas')
+    expect(screen.getByLabelText('E-mail')).toHaveValue('pessoa@timeout.test')
+    expect(screen.getByLabelText('Senha')).toHaveValue('senha-de-teste')
+  })
+
+  test('abre a Vitrine após um login confirmado', async () => {
+    const user = {
+      id: 7,
+      name: 'Pessoa Teste',
+      email: 'pessoa@timeout.test',
+      role: 'customer',
+      environmentId: 1,
+      emailVerifiedAt: new Date().toISOString(),
+      memberships: [{ environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Ambiente Teste', status: 'active' } }],
+    }
+    api.post.mockResolvedValue({ data: { data: { token: 'token-teste', user } } })
+    api.get.mockImplementation(async (url) => {
+      if (url === '/auth/me') return { data: { data: { user } } }
+      return { data: { data: {} } }
+    })
+    render(createElement(App))
+
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: user.email } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'senha-de-teste' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar no Time Out' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/login', {
+      email: user.email,
+      password: 'senha-de-teste',
+    }))
+    expect(await screen.findByRole('heading', { name: 'Destaques' })).toBeInTheDocument()
+  })
+
   test('solicita código para recuperar a senha', async () => {
     api.post.mockResolvedValue({ data: { data: { accepted: true } } })
     render(createElement(App))
@@ -104,6 +149,25 @@ describe('Tela de acesso', () => {
       })
     })
     expect(screen.getByLabelText('Código de recuperação')).toBeInTheDocument()
+  })
+
+  test('redefine a senha com o código recebido e volta ao login', async () => {
+    api.post.mockResolvedValue({ data: { data: { accepted: true } } })
+    render(createElement(App))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar acesso' }))
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@timeout.test' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
+    fireEvent.change(await screen.findByLabelText('Código de recuperação'), { target: { value: '123456' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'SenhaForte#123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar senha' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/password/reset', {
+      email: 'pessoa@timeout.test',
+      code: '123456',
+      password: 'SenhaForte#123',
+    }))
+    expect(await screen.findByRole('heading', { name: 'Boas-vindas!' })).toBeInTheDocument()
   })
 
   test('mostra confirmação para conta ainda não verificada', async () => {
@@ -128,6 +192,41 @@ describe('Tela de acesso', () => {
 
     expect(await screen.findByRole('heading', { name: 'Confirme sua conta' })).toBeInTheDocument()
     expect(screen.getByText('Código de verificação')).toBeInTheDocument()
+  })
+
+  test('envia o código de confirmação pelo fluxo existente', async () => {
+    const user = { id: 99, email: 'pessoa@timeout.test', role: 'customer', emailVerifiedAt: null, phoneVerifiedAt: null }
+    localStorage.getItem.mockReturnValue(JSON.stringify({ token: 'token-teste', user }))
+    api.get.mockResolvedValue({ data: { data: { user } } })
+    api.post.mockResolvedValue({ data: { data: { user: { ...user, emailVerifiedAt: new Date().toISOString() } } } })
+    render(createElement(App))
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Código' }), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar conta' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/verify-email', { code: '123456' }))
+  })
+
+  test('mantém a verificação de dois fatores no novo layout', async () => {
+    const user = {
+      id: 99,
+      email: 'pessoa@timeout.test',
+      role: 'customer',
+      emailVerifiedAt: new Date().toISOString(),
+      requiresTwoFactorAuth: true,
+    }
+    localStorage.getItem.mockReturnValue(JSON.stringify({ token: 'token-teste', user }))
+    api.get.mockResolvedValue({ data: { data: { user } } })
+    api.post.mockResolvedValue({ data: { data: { token: 'token-teste', user: { ...user, requiresTwoFactorAuth: false } } } })
+    render(createElement(App))
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Código 2FA' }), { target: { value: '654321' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar e Entrar' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/2fa/verify', {
+      code: '654321',
+      rememberDevice: false,
+    }))
   })
 })
 

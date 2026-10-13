@@ -704,6 +704,29 @@ function Logo({ className = '' }) {
   )
 }
 
+function AuthBrandPanel({ title, description, onHome }) {
+  return (
+    <section className="auth-panel auth-brand-panel">
+      <div className="brand-header">
+        {onHome ? (
+          <button className="logo-home-button" type="button" aria-label="Ir para o início" onClick={onHome}>
+            <Logo />
+          </button>
+        ) : <Logo />}
+        <p className="eyebrow-accent">PEDIDOS LOCAIS PARA AMBIENTES FECHADOS</p>
+      </div>
+      <div className="auth-copy">
+        <h1>{title}</h1>
+        <p>{description}</p>
+        <div className="auth-brand-features" aria-label="O que você encontra no Time Out">
+          <span><Store size={18} /> Vitrine do seu ambiente</span>
+          <span><ShoppingCart size={18} /> Pedidos em um só lugar</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function LoginScreen({ onSession, onNotice, notice }) {
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({
@@ -857,65 +880,17 @@ function LoginScreen({ onSession, onNotice, notice }) {
 
   return (
     <main className="auth-page">
-      <section className="auth-panel">
-        <div className="brand-header">
-          <button className="logo-home-button" type="button" aria-label="Ir para o início" onClick={() => { setMode('login'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
-            <Logo />
-          </button>
-          <p className="eyebrow-accent">PEDIDOS LOCAIS PARA AMBIENTES FECHADOS</p>
-        </div>
-
-        <div className="auth-illustration-container">
-          <div className="mock-feed">
-            <div className="mock-feed-header">
-              <span className="mock-feed-dot"></span>
-              <span className="mock-feed-title">Pedidos em tempo real</span>
-            </div>
-            <div className="mock-feed-list">
-              <div className="mock-feed-card animated-card-1">
-                <div className="mock-avatar avatar-m">M</div>
-                <div className="mock-card-content">
-                  <div className="mock-card-top">
-                    <strong>Mateus (Térreo)</strong>
-                    <span className="mock-time">Agora mesmo</span>
-                  </div>
-                  <span className="mock-desc">pediu Coxinha de Frango + Coca Lata</span>
-                </div>
-                <div className="mock-status preparing">Preparando 🍳</div>
-              </div>
-              <div className="mock-feed-card animated-card-2">
-                <div className="mock-avatar avatar-a">A</div>
-                <div className="mock-card-content">
-                  <div className="mock-card-top">
-                    <strong>Ana Flávia (3º andar)</strong>
-                    <span className="mock-time">Há 4 min</span>
-                  </div>
-                  <span className="mock-desc">pediu Salada de Frutas Especial</span>
-                </div>
-                <div className="mock-status ready">Pronto 🎒</div>
-              </div>
-              <div className="mock-feed-card animated-card-3">
-                <div className="mock-avatar avatar-l">L</div>
-                <div className="mock-card-content">
-                  <div className="mock-card-top">
-                    <strong>Lucas Silva (Sala 4)</strong>
-                    <span className="mock-time">Há 12 min</span>
-                  </div>
-                  <span className="mock-desc">pediu Café Espresso Duplo</span>
-                </div>
-                <div className="mock-status delivered">Entregue ✔</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="auth-copy">
-          <h2>Venda e compre no mesmo ambiente, sem bagunça.</h2>
-          <p>
-            Uma plataforma de pedidos moderna e segura, com proteção de acesso feita sob medida para condomínios, escolas e escritórios.
-          </p>
-        </div>
-      </section>
+      <AuthBrandPanel
+        title="Peça e venda no mesmo ambiente."
+        description="Encontre produtos do seu local, acompanhe pedidos e gerencie suas vendas no Time Out."
+        onHome={() => {
+          setMode('login')
+          setRecoveryRequested(false)
+          setRecoveryCode('')
+          setFormErrors({})
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
 
       <form className="auth-form" onSubmit={submit}>
         <div className="form-card">
@@ -1229,32 +1204,19 @@ function VerifyEmailScreen({ session, onSession, onVerified, onLogout, onNotice,
 
   return (
     <main className="auth-page verification-page">
-      <section className="auth-panel">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <MailCheck size={30} />
-          </div>
-          <div>
-            <p className="eyebrow">Segurança da conta</p>
-            <h1>Confirme sua conta</h1>
-          </div>
-        </div>
-        <div className="auth-copy">
-          <h2>Antes de comprar ou vender, confirme que este acesso pertence a você.</h2>
-          <p>
-            Escolha como deseja receber o código de 6 números.
-            {hasPhone ? ` Telefone cadastrado: ${session.user.phone}.` : ' Para SMS ou WhatsApp, cadastre um telefone no perfil.'}
-          </p>
-        </div>
-      </section>
+      <AuthBrandPanel
+        title="Confirme sua conta"
+        description="Seu acesso ao ambiente fica disponível depois da confirmação."
+      />
 
       <form className="auth-form" onSubmit={verify}>
+        <div className="form-card">
         <div className="form-heading">
           <h2>Código de verificação</h2>
-          <p>Confira o canal escolhido. No e-mail, veja também a pasta de spam.</p>
+          <p>Escolha como receber o código de 6 dígitos. No e-mail, confira também a pasta de spam.{hasPhone ? ` Telefone cadastrado: ${session.user.phone}.` : ''}</p>
         </div>
 
-        {notice ? <div className="notice">{notice}</div> : null}
+        {notice ? <div className="notice" role="alert">{notice}</div> : null}
 
         <div className="channel-picker">
           {Object.entries(verificationChannelLabels).map(([value, label]) => {
@@ -1284,6 +1246,7 @@ function VerifyEmailScreen({ session, onSession, onVerified, onLogout, onNotice,
             inputMode="numeric"
             maxLength={6}
             required
+            autoComplete="one-time-code"
           />
         </label>
 
@@ -1297,6 +1260,7 @@ function VerifyEmailScreen({ session, onSession, onVerified, onLogout, onNotice,
         <button className="ghost-button wide" type="button" onClick={onLogout}>
           Sair
         </button>
+        </div>
       </form>
     </main>
   )
@@ -1338,33 +1302,20 @@ function TwoFactorAuthScreen({ onSession, onNotice, notice }) {
   }
 
   return (
-    <main className="auth-page">
-      <section className="auth-panel">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <ShieldCheck size={30} />
-          </div>
-          <div>
-            <p className="eyebrow">Segurança adicional</p>
-            <h1>Autenticação de Dois Fatores</h1>
-          </div>
-        </div>
-        <div className="auth-copy">
-          <h2>Proteja sua conta com uma camada extra de segurança.</h2>
-          <p>
-            Digite o código de 6 dígitos enviado para seu e-mail. 
-            Este código muda a cada 30 segundos para maior segurança.
-          </p>
-        </div>
-      </section>
+    <main className="auth-page verification-page two-factor-page">
+      <AuthBrandPanel
+        title="Mais uma etapa para proteger sua conta."
+        description="Use o código enviado ao seu e-mail para concluir o acesso ao Time Out."
+      />
 
       <form className="auth-form" onSubmit={verify}>
+        <div className="form-card">
         <div className="form-heading">
-          <h2>Código de Verificação</h2>
+          <h2>Autenticação de dois fatores</h2>
           <p>Verifique seu e-mail para encontrar o código de 6 dígitos.</p>
         </div>
 
-        {notice ? <div className="notice">{notice}</div> : null}
+        {notice ? <div className="notice" role="alert">{notice}</div> : null}
 
         <label>
           Código 2FA
@@ -1403,6 +1354,7 @@ function TwoFactorAuthScreen({ onSession, onNotice, notice }) {
           <RefreshCcw size={16} />
           Reenviar código
         </button>
+        </div>
       </form>
     </main>
   )
