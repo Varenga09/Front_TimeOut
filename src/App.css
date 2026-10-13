@@ -3609,6 +3609,23 @@ textarea {
 .category-filter-row button { flex: 0 0 auto; min-height: 34px; border: 1px solid #e2e7ed; border-radius: 999px; padding: 0 15px; background: #fff; color: #5f7286; font-size: 12px; font-weight: 800; cursor: pointer; }
 .category-filter-row button.active { border-color: #082f50; background: #082f50; color: #fff; }
 
+@media (max-width: 680px) {
+  .category-filter-row,
+  .order-filters {
+    scrollbar-width: none;
+  }
+
+  .category-filter-row::-webkit-scrollbar,
+  .order-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .category-filter-row button,
+  .order-filters button {
+    min-height: 40px;
+  }
+}
+
 .product-card,
 .line-card,
 .order-card,

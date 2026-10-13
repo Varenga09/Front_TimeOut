@@ -3157,14 +3157,6 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         </div>
       ) : null}
 
-      {view === 'market' && canUseMarket && !productId && cartItemsCount > 0 ? (
-        <button className="floating-cart" type="button" onClick={() => navigateToView('cart')}>
-          <ShoppingCart size={22} />
-          <span>{cartItemsCount}</span>
-          <strong>{money.format(cartTotal)}</strong>
-        </button>
-      ) : null}
-
     </Shell>
   )
 }
