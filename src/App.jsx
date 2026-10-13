@@ -50,6 +50,7 @@ import {
   KeyRound,
   Lock,
   Hash,
+  ArrowLeft,
   ArrowRight,
 } from 'lucide-react'
 import { api, getAssetUrl, getErrorMessage, setAuthToken } from './api'
@@ -341,6 +342,7 @@ function normalizeProductOption(item) {
   return {
     id: item.id || null,
     name,
+    description: item.description || '',
     priceAdjustment: parseMoneyValue(item.priceAdjustment ?? item.priceDelta ?? item.additionalPrice ?? 0),
     imageUrl: item.imageUrl || null,
     isActive: item.isActive !== false,
@@ -1645,6 +1647,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return params.get('timeoutResourceType') === 'seller_application' ? params.get('timeoutResourceId') : null
   })
   const productRequestRef = useRef(0)
+  const unsavedProductOptionsRef = useRef(false)
   const productListRequestRef = useRef(0)
   const marketScrollRef = useRef(0)
   const restoreMarketScrollRef = useRef(false)
@@ -1963,7 +1966,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       selectedSizeId: selectedSize?.id || null,
       selectedSizeName: selectedSize?.name || null,
       selectedAddonIds: addonIds,
-      cartAddons: selectedAddons.map(({ id, name, price }) => ({ id, name, price })),
+      cartAddons: selectedAddons.map(({ id, name, price, description, imageUrl }) => ({ id, name, price, description, imageUrl })),
       cartBasePrice: pricing.base,
       cartDiscount: pricing.discount,
       cartImageUrl: selectedSize?.imageUrl || selectedOption?.imageUrl || product.imageUrl,
@@ -2057,6 +2060,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   function navigateToView(nextView) {
+    if (nextView !== 'seller-products' && unsavedProductOptionsRef.current && !window.confirm('Descartar alterações nas opções e sair desta página?')) return
+    if (nextView !== 'seller-products') unsavedProductOptionsRef.current = false
     if (productId) {
       const url = new URL(window.location.href)
       url.searchParams.delete('produto')
@@ -2228,13 +2233,15 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   async function saveProduct(payload, productId = null) {
-    const { imageFile, galleryFiles = [], flavorImageFiles = [], sizeImageFiles = [], ...productData } = payload
+    const { imageFile, galleryFiles = [], flavorImageFiles = [], sizeImageFiles = [], addonImageFiles = [], ...productData } = payload
     const requestData = toFormData(productData, 'image', imageFile)
     galleryFiles.forEach((file) => requestData.append('images', file))
     requestData.append('flavorImageIds', JSON.stringify(flavorImageFiles.map(({ id }) => id)))
     flavorImageFiles.forEach(({ file }) => requestData.append('flavorImages', file))
     requestData.append('sizeImageIds', JSON.stringify(sizeImageFiles.map(({ id }) => id)))
     sizeImageFiles.forEach(({ file }) => requestData.append('sizeImages', file))
+    requestData.append('addonImageIds', JSON.stringify(addonImageFiles.map(({ id }) => id)))
+    addonImageFiles.forEach(({ file }) => requestData.append('addonImages', file))
 
     try {
       if (productId) {
@@ -2751,8 +2758,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     <Shell
       session={session}
       notice={notice}
-      onLogout={onLogout}
-      onProfileClick={() => setView('profile')}
+      onLogout={() => { if (!unsavedProductOptionsRef.current || window.confirm('Descartar alterações nas opções e sair?')) onLogout() }}
+      onProfileClick={() => navigateToView('profile')}
       navigation={navigation}
       pageTitle={pageTitle}
       cartItemsCount={cartItemsCount}
@@ -2873,6 +2880,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
           onSave={saveProduct}
           onToggle={toggleProduct}
           onDelete={deleteProduct}
+          onOptionsDirty={(dirty) => { unsavedProductOptionsRef.current = dirty }}
         />
       )}
 
@@ -3309,7 +3317,8 @@ function ProductDetailPage({
                     aria-pressed={effectiveFlavor === flavor.name}
                     onClick={() => { setSelectedFlavor(flavor.name); setGallerySelection(null) }}
                   >
-                    <span>{flavor.name}</span>
+                    <span>{flavor.imageUrl ? <img className="choice-image" src={getAssetUrl(flavor.imageUrl)} alt="" /> : null}{flavor.name}</span>
+                    {flavor.description ? <small>{flavor.description}</small> : null}
                     <small>{formatPriceAdjustment(flavor.priceAdjustment)}</small>
                   </button>
                 ))}
@@ -3325,7 +3334,7 @@ function ProductDetailPage({
                 className={selectedSizeId === size.id ? 'active' : ''}
                 aria-pressed={selectedSizeId === size.id}
                 onClick={() => { setSelectedSizeId(size.id); setGallerySelection(null) }}
-              ><span>{size.name}</span><small>{money.format(Number(size.price))}</small></button>)}
+              ><span>{size.imageUrl ? <img className="choice-image" src={getAssetUrl(size.imageUrl)} alt="" /> : null}{size.name}{size.description ? <small>{size.description}</small> : null}</span><small>{money.format(Number(size.price))}</small></button>)}
             </div>
             {!selectedSize ? <p className="muted-note">Escolha um tamanho para comprar.</p> : null}
           </div> : null}
@@ -3335,7 +3344,7 @@ function ProductDetailPage({
             <div className="addon-choice-list">
               {addons.map((addon) => <label key={addon.id}>
                 <input type="checkbox" checked={selectedAddonIds.includes(addon.id)} onChange={(event) => setSelectedAddonIds((current) => event.target.checked ? [...current, addon.id] : current.filter((id) => id !== addon.id))} />
-                <span>{addon.name}</span>
+                <span>{addon.imageUrl ? <img className="choice-image" src={getAssetUrl(addon.imageUrl)} alt="" /> : null}{addon.name}{addon.description ? <small>{addon.description}</small> : null}</span>
                 <strong>+{money.format(Number(addon.price))}</strong>
               </label>)}
             </div>
@@ -3530,7 +3539,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
                     {item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}
                   </p>
                   {item.selectedSizeName ? <small>Tamanho: {item.selectedSizeName} - {money.format(Number(item.cartBasePrice || 0))}</small> : null}
-                  {item.cartAddons?.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+                  {item.cartAddons?.map((addon) => <small key={addon.id} className="option-summary-line">{addon.imageUrl ? <img src={getAssetUrl(addon.imageUrl)} alt="" /> : null}{addon.name}: +{money.format(Number(addon.price))}</small>)}
                   {item.cartDiscount > 0 ? <small>Desconto na base: -{money.format(item.cartDiscount)}</small> : null}
                 </div>
                 <div className="quantity-control">
@@ -3675,7 +3684,7 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
                 {item.quantity}x {item.product?.name || 'Produto'}
                 {snapshot?.size ? <small>{snapshot.size.name}: {money.format(Number(snapshot.size.price))}</small> : null}
                 {snapshot?.flavor ? <small>Sabor: {snapshot.flavor.name}</small> : null}
-                {snapshot?.addons?.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+                {snapshot?.addons?.map((addon) => <small key={addon.id} className="option-summary-line">{addon.imageUrl ? <img src={getAssetUrl(addon.imageUrl)} alt="" /> : null}{addon.name}: +{money.format(Number(addon.price))}</small>)}
                 {snapshot?.productDiscount > 0 ? <small>Desconto na base: -{money.format(Number(snapshot.productDiscount))}</small> : null}
                 <small>{money.format(Number(item.unitPrice))} por unidade</small>
               </span><strong>{money.format(Number(item.subtotal))}</strong></li>
@@ -4167,7 +4176,7 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
                     {item.quantity}x {item.product.name}
                     {item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}
                     {getOrderOptionsSnapshot(item)?.size ? <small>Tamanho: {getOrderOptionsSnapshot(item).size.name} ({money.format(Number(getOrderOptionsSnapshot(item).size.price))})</small> : null}
-                    {getOrderOptionsSnapshot(item)?.addons?.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+                    {getOrderOptionsSnapshot(item)?.addons?.map((addon) => <small key={addon.id} className="option-summary-line">{addon.imageUrl ? <img src={getAssetUrl(addon.imageUrl)} alt="" /> : null}{addon.name}: +{money.format(Number(addon.price))}</small>)}
                     {getOrderOptionsSnapshot(item)?.productDiscount > 0 ? <small>Desconto na base: -{money.format(Number(getOrderOptionsSnapshot(item).productDiscount))}</small> : null}
                     <small>Preço por unidade: {money.format(Number(item.unitPrice))}</small>
                   </span>
@@ -4228,7 +4237,129 @@ function FlavorImageControl({ option, onChange }) {
   </div>
 }
 
-function SellerProductsView({ products, categories, onSave, onToggle, onDelete }) {
+function OptionPreviewImage({ option, className = '', alt = '' }) {
+  const fileUrl = useMemo(() => option?.imageFile ? URL.createObjectURL(option.imageFile) : null, [option])
+  useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl) }, [fileUrl])
+  const url = fileUrl || getAssetUrl(option?.imageUrl)
+  return url ? <img className={className} src={url} alt={alt} /> : null
+}
+
+const productOptionGroups = [
+  { key: 'flavors', title: 'Variações', rule: 'Escolha única, quando houver. Ajusta o preço do produto ou do tamanho escolhido.', label: 'Variação', priceLabel: 'Ajuste de preço (R$)', example: 'Ex: chocolate' },
+  { key: 'sizeOptions', title: 'Tamanhos ou porções', rule: 'Escolha obrigatória de exatamente uma opção quando tamanhos estiverem cadastrados. O preço substitui o preço base.', label: 'Tamanho ou porção', priceLabel: 'Preço do tamanho (R$)', example: 'Ex: 500 ml' },
+  { key: 'addons', title: 'Adicionais', rule: 'Escolha opcional de vários itens. Cada preço é somado após o desconto do produto.', label: 'Adicional', priceLabel: 'Preço do adicional (R$)', example: 'Ex: paçoca' },
+]
+
+function ProductOptionsPage({ initialOptions, product, onConfirm, onBack, onDirtyChange }) {
+  const [draft, setDraft] = useState(() => Object.fromEntries(productOptionGroups.map(({ key }) => [key, initialOptions[key].map((option) => ({ ...option }))])))
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState('')
+  const [previewFlavorId, setPreviewFlavorId] = useState('')
+  const [previewSizeId, setPreviewSizeId] = useState('')
+  const [previewAddonIds, setPreviewAddonIds] = useState([])
+  const activeFlavors = draft.flavors.filter((option) => option.isActive !== false && option.name.trim())
+  const activeSizes = draft.sizeOptions.filter((option) => option.isActive !== false && option.name.trim())
+  const activeAddons = draft.addons.filter((option) => option.isActive !== false && option.name.trim())
+  const previewFlavor = activeFlavors.find((option) => option.id === previewFlavorId) || activeFlavors[0] || null
+  const previewSize = activeSizes.find((option) => option.id === previewSizeId) || activeSizes[0] || null
+  const previewAddons = activeAddons.filter((option) => previewAddonIds.includes(option.id))
+  const previewPrice = getSelectionPricing(product, previewFlavor, previewSize, previewAddons)
+  const previewImageOption = previewSize?.imageFile || previewSize?.imageUrl ? previewSize : previewFlavor?.imageFile || previewFlavor?.imageUrl ? previewFlavor : product
+
+  useEffect(() => {
+    onDirtyChange(dirty)
+    return () => onDirtyChange(false)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    if (!dirty) return undefined
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  function changeOptions(group, options) {
+    setDraft((current) => ({ ...current, [group]: options }))
+    setDirty(true)
+    setError('')
+  }
+
+  function updateOption(group, index, patch) {
+    changeOptions(group, draft[group].map((option, position) => position === index ? { ...option, ...patch } : option))
+  }
+
+  function moveOption(group, index, offset) {
+    const options = [...draft[group]]
+    const target = index + offset
+    if (target < 0 || target >= options.length) return
+    ;[options[index], options[target]] = [options[target], options[index]]
+    changeOptions(group, options)
+  }
+
+  function back() {
+    if (dirty && !window.confirm('Descartar alterações nas opções e voltar ao produto?')) return
+    onBack()
+  }
+
+  function confirm() {
+    for (const group of productOptionGroups) {
+      const options = draft[group.key]
+      const names = new Set()
+      for (const option of options) {
+        const name = option.name.trim()
+        const price = Number(group.key === 'flavors' ? option.priceAdjustment : option.price)
+        if (!name || name.length > 80 || option.description?.length > 160 || (group.key !== 'flavors' && String(option.price ?? '').trim() === '') || !Number.isFinite(price) || (group.key === 'sizeOptions' ? price <= 0 : group.key === 'addons' ? price < 0 : false) || Math.abs(Math.round(price * 100) - price * 100) > 0.000001) {
+          setError(`Confira nome, descrição e preço de cada ${group.label.toLowerCase()}.`)
+          return
+        }
+        const key = name.toLocaleLowerCase('pt-BR')
+        if (names.has(key)) { setError(`Há nomes repetidos em ${group.title.toLowerCase()}.`); return }
+        names.add(key)
+      }
+      if (group.key !== 'addons' && options.length && options.every((option) => option.isActive === false)) {
+        setError(`Mantenha pelo menos uma opção ativa em ${group.title.toLowerCase()} ou remova o grupo.`)
+        return
+      }
+    }
+    onConfirm(draft)
+  }
+
+  return <section className="product-options-page">
+    <div className="section-heading option-page-heading">
+      <div><button className="ghost-button" type="button" onClick={back}><ArrowLeft size={16} /> Voltar ao produto</button><h2>Opções e adicionais</h2><p>{product.name || 'Novo produto'}</p></div>
+      <button className="primary-button" type="button" onClick={confirm}>Concluir configuração</button>
+    </div>
+    {error ? <p className="form-error" role="alert">{error}</p> : null}
+    <div className="option-page-layout">
+      <div className="option-page-editors">
+        {productOptionGroups.map((group) => <section className="option-editor" key={group.key}>
+          <div className="option-editor-heading"><div><h3>{group.title}</h3><p>{group.rule}</p></div><button className="ghost-button" type="button" onClick={() => changeOptions(group.key, [...draft[group.key], { id: newFlavorId(), name: '', description: '', priceAdjustment: 0, price: '', isActive: true, imageUrl: null, imageFile: null, removeImage: false }])}><Plus size={16} /> Adicionar</button></div>
+          {draft[group.key].length === 0 ? <p className="muted-note">Nenhuma opção cadastrada neste grupo.</p> : null}
+          {draft[group.key].map((option, index) => <div className="option-row" key={option.id}>
+            <label>{group.label}<input value={option.name} maxLength={80} onChange={(event) => updateOption(group.key, index, { name: event.target.value })} placeholder={group.example} /></label>
+            <label>Descrição curta<input value={option.description || ''} maxLength={160} onChange={(event) => updateOption(group.key, index, { description: event.target.value })} placeholder="Opcional" /></label>
+            <label>{group.priceLabel}<input type="number" step="0.01" min={group.key === 'sizeOptions' ? '0.01' : group.key === 'addons' ? '0' : undefined} value={group.key === 'flavors' ? option.priceAdjustment : option.price} onChange={(event) => updateOption(group.key, index, { [group.key === 'flavors' ? 'priceAdjustment' : 'price']: event.target.value })} /></label>
+            <FlavorImageControl option={option} onChange={(patch) => updateOption(group.key, index, patch)} />
+            <div className="option-row-actions"><label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateOption(group.key, index, { isActive: event.target.checked })} /> Ativo</label><button type="button" onClick={() => moveOption(group.key, index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || group.label}`}>↑</button><button type="button" onClick={() => moveOption(group.key, index, 1)} disabled={index === draft[group.key].length - 1} aria-label={`Descer ${option.name || group.label}`}>↓</button></div>
+            <button className="icon-button danger" type="button" onClick={() => changeOptions(group.key, draft[group.key].filter((_, position) => position !== index))} title={`Remover ${group.label.toLowerCase()}`}><Trash2 size={16} /></button>
+          </div>)}
+        </section>)}
+      </div>
+      <aside className="option-preview" aria-label="Prévia para o comprador">
+        <h3>Prévia do cliente</h3>
+        <strong>{product.name || 'Nome do produto'}</strong>
+        <OptionPreviewImage option={previewImageOption} className="option-preview-main-image" alt={product.name || 'Produto'} />
+        {activeFlavors.length ? <div><h4>Variação · escolha única</h4>{activeFlavors.map((option) => <button className={previewFlavor?.id === option.id ? 'selected' : ''} key={option.id} type="button" onClick={() => setPreviewFlavorId(option.id)}><OptionPreviewImage option={option} /><span>{option.name}{option.description ? <small>{option.description}</small> : null}</span><small>{formatPriceAdjustment(option.priceAdjustment)}</small></button>)}</div> : null}
+        {activeSizes.length ? <div><h4>Tamanho · obrigatório, escolha única</h4>{activeSizes.map((option) => <button className={previewSize?.id === option.id ? 'selected' : ''} key={option.id} type="button" onClick={() => setPreviewSizeId(option.id)}><OptionPreviewImage option={option} /><span>{option.name}{option.description ? <small>{option.description}</small> : null}</span><small>{money.format(Number(option.price || 0))}</small></button>)}</div> : null}
+        {activeAddons.length ? <div><h4>Adicionais · escolha múltipla opcional</h4>{activeAddons.map((option) => <label key={option.id}><input type="checkbox" checked={previewAddonIds.includes(option.id)} onChange={(event) => setPreviewAddonIds((current) => event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id))} /><OptionPreviewImage option={option} /><span>{option.name}{option.description ? <small>{option.description}</small> : null}</span><small>+{money.format(Number(option.price || 0))}</small></label>)}</div> : null}
+        <p>Base {money.format(previewPrice.base)}{previewPrice.discount > 0 ? ` · Desconto -${money.format(previewPrice.discount)}` : ''}{previewPrice.addonsTotal > 0 ? ` · Adicionais +${money.format(previewPrice.addonsTotal)}` : ''}</p>
+        <strong className="option-preview-total">{money.format(previewPrice.unit)} por unidade</strong>
+      </aside>
+    </div>
+  </section>
+}
+
+function SellerProductsView({ products, categories, onSave, onToggle, onDelete, onOptionsDirty }) {
   const emptyForm = {
     name: '',
     description: '',
@@ -4250,6 +4381,11 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
   }
   const [editingProduct, setEditingProduct] = useState(null)
   const [form, setForm] = useState(emptyForm)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const [optionDraftDirty, setOptionDraftDirty] = useState(false)
+  const [pendingOptionsSave, setPendingOptionsSave] = useState(false)
+  const [savingProduct, setSavingProduct] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [productSearch, setProductSearch] = useState('')
   const [productStatus, setProductStatus] = useState('all')
   const imageFilePreview = useMemo(
@@ -4281,6 +4417,18 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
   })
 
   useEffect(() => {
+    onOptionsDirty(optionDraftDirty || pendingOptionsSave)
+    return () => onOptionsDirty(false)
+  }, [optionDraftDirty, pendingOptionsSave, onOptionsDirty])
+
+  useEffect(() => {
+    if (!pendingOptionsSave) return undefined
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [pendingOptionsSave])
+
+  useEffect(() => {
     return () => {
       if (imageFilePreview) URL.revokeObjectURL(imageFilePreview)
     }
@@ -4295,16 +4443,24 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
   function resetForm() {
     setEditingProduct(null)
     setForm(emptyForm)
+    setOptionsOpen(false)
+    setPendingOptionsSave(false)
+    setOptionDraftDirty(false)
+    setSaveError('')
   }
 
   function editProduct(product) {
+    if ((pendingOptionsSave || optionDraftDirty) && !window.confirm('Descartar alterações nas opções deste produto?')) return
     setEditingProduct(product)
+    setOptionsOpen(false)
+    setPendingOptionsSave(false)
+    setSaveError('')
     setForm({
       name: product.name,
       description: product.description || '',
       flavors: parseProductFlavors(product.flavors).map((option) => ({ ...option, id: option.id || newFlavorId(), imageFile: null, removeImage: false })),
       sizeOptions: parseChoiceOptions(product.sizeOptions).map((option) => ({ ...option, imageFile: null, removeImage: false })),
-      addons: parseChoiceOptions(product.addons),
+      addons: parseChoiceOptions(product.addons).map((option) => ({ ...option, imageFile: null, removeImage: false })),
       price: product.price,
       discountType: product.discountType || '',
       discountValue: product.discountValue || '',
@@ -4322,6 +4478,8 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
 
   async function submit(event) {
     event.preventDefault()
+    setSavingProduct(true)
+    setSaveError('')
     const saved = await onSave(
       {
         ...form,
@@ -4334,15 +4492,17 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
           .map((option) => ({
             id: option.id,
             name: option.name.trim(),
+            description: (option.description || '').trim(),
             priceAdjustment: parseMoneyValue(option.priceAdjustment),
             isActive: option.isActive !== false,
             removeImage: Boolean(option.removeImage),
           }))
           .filter((option) => option.name),
         flavorImageFiles: form.flavors.filter((option) => option.name.trim() && option.imageFile).map((option) => ({ id: option.id, file: option.imageFile })),
-        sizeOptions: form.sizeOptions.map((option) => ({ id: option.id, name: option.name.trim(), price: parseMoneyValue(option.price), isActive: option.isActive !== false, removeImage: Boolean(option.removeImage) })).filter((option) => option.name),
+        sizeOptions: form.sizeOptions.map((option) => ({ id: option.id, name: option.name.trim(), description: (option.description || '').trim(), price: parseMoneyValue(option.price), isActive: option.isActive !== false, removeImage: Boolean(option.removeImage) })).filter((option) => option.name),
         sizeImageFiles: form.sizeOptions.filter((option) => option.name.trim() && option.imageFile).map((option) => ({ id: option.id, file: option.imageFile })),
-        addons: form.addons.map((option) => ({ id: option.id, name: option.name.trim(), price: parseMoneyValue(option.price), isActive: option.isActive !== false })).filter((option) => option.name),
+        addons: form.addons.map((option) => ({ id: option.id, name: option.name.trim(), description: (option.description || '').trim(), price: parseMoneyValue(option.price), isActive: option.isActive !== false, removeImage: Boolean(option.removeImage) })).filter((option) => option.name),
+        addonImageFiles: form.addons.filter((option) => option.name.trim() && option.imageFile).map((option) => ({ id: option.id, file: option.imageFile })),
         quantity: Number(form.quantity),
         categoryId: Number(form.categoryId || categories[0]?.id),
         isActive: Boolean(form.isActive),
@@ -4350,55 +4510,18 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
       },
       editingProduct?.id,
     )
+    setSavingProduct(false)
+    if (!saved) setSaveError('Não foi possível salvar. Confira os dados e tente novamente.')
     if (saved) resetForm()
   }
 
-  function addProductOption() {
-    setForm((current) => ({
-      ...current,
-      flavors: [...current.flavors, { id: newFlavorId(), name: '', priceAdjustment: 0, isActive: true, imageUrl: null, imageFile: null, removeImage: false }],
-    }))
-  }
-
-  function updateProductOption(index, patch) {
-    setForm((current) => ({
-      ...current,
-      flavors: current.flavors.map((option, optionIndex) =>
-        optionIndex === index ? { ...option, ...patch } : option
-      ),
-    }))
-  }
-
-  function removeProductOption(index) {
-    setForm((current) => ({
-      ...current,
-      flavors: current.flavors.filter((_, optionIndex) => optionIndex !== index),
-    }))
-  }
-
-  function addChoice(group) {
-    setForm((current) => ({ ...current, [group]: [...current[group], { id: newFlavorId(), name: '', price: '', isActive: true, imageUrl: null, imageFile: null, removeImage: false }] }))
-  }
-
-  function updateChoice(group, index, patch) {
-    setForm((current) => ({ ...current, [group]: current[group].map((option, position) => position === index ? { ...option, ...patch } : option) }))
-  }
-
-  function removeChoice(group, index) {
-    setForm((current) => ({ ...current, [group]: current[group].filter((_, position) => position !== index) }))
-  }
-
-  function moveChoice(group, index, offset) {
-    setForm((current) => {
-      const options = [...current[group]]
-      const target = index + offset
-      if (target < 0 || target >= options.length) return current
-      const moving = options[index]
-      options[index] = options[target]
-      options[target] = moving
-      return { ...current, [group]: options }
-    })
-  }
+  if (optionsOpen) return <ProductOptionsPage
+    initialOptions={form}
+    product={form}
+    onBack={() => setOptionsOpen(false)}
+    onDirtyChange={setOptionDraftDirty}
+    onConfirm={(options) => { setForm((current) => ({ ...current, ...options })); setPendingOptionsSave(true); setOptionsOpen(false) }}
+  />
 
   return (
     <section className="content-grid two-columns">
@@ -4528,88 +4651,12 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
             placeholder="Detalhes do produto"
           />
         </label>
-        <div className="option-editor">
-          <div className="option-editor-heading">
-            <div>
-              <strong>Sabores e variações exclusivas</strong>
-              <span>Uma opção por unidade. O preço ajusta a base do produto.</span>
-            </div>
-            <button className="ghost-button" type="button" onClick={addProductOption}>
-              <Plus size={16} />
-              Adicionar
-            </button>
-          </div>
-          {form.flavors.map((option, index) => (
-            <div className="option-row" key={option.id}>
-              <label>
-                Nome da opção
-                <input
-                  value={option.name}
-                  onChange={(event) => updateProductOption(index, { name: event.target.value })}
-                  placeholder="Ex: Recheado com brigadeiro"
-                />
-              </label>
-              <label>
-                Acréscimo/desconto
-                <input
-                  type="number"
-                  step="0.01"
-                  value={option.priceAdjustment}
-                  onChange={(event) => updateProductOption(index, { priceAdjustment: event.target.value })}
-                  placeholder="0,00"
-                />
-              </label>
-              <FlavorImageControl option={option} onChange={(patch) => updateProductOption(index, patch)} />
-              <div className="option-row-actions">
-                <label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateProductOption(index, { isActive: event.target.checked })} /> Ativo</label>
-                <button type="button" onClick={() => moveChoice('flavors', index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || 'sabor'}`}>↑</button>
-                <button type="button" onClick={() => moveChoice('flavors', index, 1)} disabled={index === form.flavors.length - 1} aria-label={`Descer ${option.name || 'sabor'}`}>↓</button>
-              </div>
-              <span className="option-final-price">Preço final: {money.format(Number(form.price || 0) + parseMoneyValue(option.priceAdjustment))}</span>
-              <button className="icon-button danger" type="button" onClick={() => removeProductOption(index)} title="Remover opção">
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-          {form.flavors.length === 0 ? (
-            <p className="muted-note">
-              Exemplo: Brownie recheado com brigadeiro + R$ 2,00 ou Brownie grande + R$ 6,00.
-            </p>
-          ) : null}
-        </div>
-        <div className="option-editor">
-          <div className="option-editor-heading">
-            <div><strong>Tamanhos (escolha única)</strong><span>Cada tamanho tem preço próprio. O comprador escolhe exatamente um.</span></div>
-            <button className="ghost-button" type="button" onClick={() => addChoice('sizeOptions')}><Plus size={16} /> Adicionar</button>
-          </div>
-          {form.sizeOptions.map((option, index) => <div className="option-row" key={option.id}>
-            <label>Tamanho<input value={option.name} onChange={(event) => updateChoice('sizeOptions', index, { name: event.target.value })} placeholder="Ex: 500 ml" required /></label>
-            <label>Preço final (R$)<input type="number" min="0.01" step="0.01" value={option.price} onChange={(event) => updateChoice('sizeOptions', index, { price: event.target.value })} required /></label>
-            <FlavorImageControl option={option} onChange={(patch) => updateChoice('sizeOptions', index, patch)} />
-            <div className="option-row-actions">
-              <label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateChoice('sizeOptions', index, { isActive: event.target.checked })} /> Ativo</label>
-              <button type="button" onClick={() => moveChoice('sizeOptions', index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || 'tamanho'}`}>↑</button>
-              <button type="button" onClick={() => moveChoice('sizeOptions', index, 1)} disabled={index === form.sizeOptions.length - 1} aria-label={`Descer ${option.name || 'tamanho'}`}>↓</button>
-            </div>
-            <span className="option-final-price">Preço final: {money.format(getSelectionPricing(form, null, option).unit)}</span>
-            <button className="icon-button danger" type="button" onClick={() => removeChoice('sizeOptions', index)} title="Remover tamanho"><Trash2 size={16} /></button>
-          </div>)}
-        </div>
-        <div className="option-editor">
-          <div className="option-editor-heading">
-            <div><strong>Adicionais (múltipla escolha)</strong><span>O comprador pode marcar vários ou nenhum. Não recebem desconto do produto; cupons incluem os adicionais.</span></div>
-            <button className="ghost-button" type="button" onClick={() => addChoice('addons')}><Plus size={16} /> Adicionar</button>
-          </div>
-          {form.addons.map((option, index) => <div className="option-row" key={option.id}>
-            <label>Adicional<input value={option.name} onChange={(event) => updateChoice('addons', index, { name: event.target.value })} placeholder="Ex: Paçoca" required /></label>
-            <label>Preço (R$)<input type="number" min="0" step="0.01" value={option.price} onChange={(event) => updateChoice('addons', index, { price: event.target.value })} required /></label>
-            <div className="option-row-actions">
-              <label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateChoice('addons', index, { isActive: event.target.checked })} /> Ativo</label>
-              <button type="button" onClick={() => moveChoice('addons', index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || 'adicional'}`}>↑</button>
-              <button type="button" onClick={() => moveChoice('addons', index, 1)} disabled={index === form.addons.length - 1} aria-label={`Descer ${option.name || 'adicional'}`}>↓</button>
-            </div>
-            <button className="icon-button danger" type="button" onClick={() => removeChoice('addons', index)} title="Remover adicional"><Trash2 size={16} /></button>
-          </div>)}
+        <div className="product-options-entry">
+          <button className="ghost-button" type="button" onClick={() => setOptionsOpen(true)}><Plus size={16} /> Configurar opções e adicionais</button>
+          <p>{form.flavors.length} variações · {form.sizeOptions.length} tamanhos · {form.addons.length} adicionais</p>
+          {form.sizeOptions.length > 0 ? <small>Tamanho obrigatório · escolha única</small> : null}
+          {form.flavors.length > 0 ? <small>Variação exclusiva · escolha única</small> : null}
+          {form.addons.length > 0 ? <small>Adicionais opcionais · escolha múltipla</small> : null}
         </div>
         <label>
           Categoria
@@ -4706,9 +4753,10 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
             </>
           ) : null}
         </div>
-        <button className="primary-button" type="submit">
+        {saveError ? <p className="form-error" role="alert">{saveError}</p> : null}
+        <button className="primary-button" type="submit" disabled={savingProduct}>
           <Check size={18} />
-          {editingProduct ? 'Salvar alterações' : 'Salvar produto'}
+          {savingProduct ? 'Salvando...' : editingProduct ? 'Salvar alterações' : 'Salvar produto'}
         </button>
         {editingProduct ? (
           <button className="ghost-button wide" type="button" onClick={resetForm}>

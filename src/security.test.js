@@ -587,6 +587,50 @@ describe('Navegação e isolamento do catálogo', () => {
 })
 
 describe('Galerias no cadastro do vendedor', () => {
+  test('novo produto configura tamanho e adicional numa página e mantém o rascunho até salvar', async () => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+    const user = { id: 20, name: 'Vendedor', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [{ id: 1, name: 'Doces' }] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    api.post.mockResolvedValue({ data: { data: {} } })
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
+    fireEvent.change(screen.getByPlaceholderText('Coxinha'), { target: { value: 'Açaí' } })
+    fireEvent.change(screen.getByLabelText('Preço base'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('Estoque'), { target: { value: '8' } })
+    fireEvent.change(screen.getByLabelText('Categoria'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar opções e adicionais' }))
+    expect(screen.queryByRole('button', { name: 'Salvar produto' })).not.toBeInTheDocument()
+    const groups = document.querySelectorAll('.option-editor')
+    fireEvent.click(groups[1].querySelector('button.ghost-button'))
+    fireEvent.click(groups[2].querySelector('button.ghost-button'))
+    const sizeInputs = groups[1].querySelectorAll('.option-row input')
+    fireEvent.change(sizeInputs[0], { target: { value: '500 ml' } })
+    fireEvent.change(sizeInputs[1], { target: { value: 'Porção média' } })
+    fireEvent.change(sizeInputs[2], { target: { value: '15' } })
+    const addonInputs = groups[2].querySelectorAll('.option-row input')
+    fireEvent.change(addonInputs[0], { target: { value: 'Paçoca' } })
+    fireEvent.change(addonInputs[2], { target: { value: '2' } })
+    fireEvent.click(document.querySelector('.option-preview input[type="checkbox"]'))
+    expect(screen.getByText('R$ 17,00 por unidade')).toBeInTheDocument()
+    const confirmDiscard = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao produto' }))
+    expect(screen.getByRole('heading', { name: 'Opções e adicionais' })).toBeInTheDocument()
+    confirmDiscard.mockRestore()
+    fireEvent.click(screen.getByRole('button', { name: 'Concluir configuração' }))
+    expect(screen.getByText(/1 tamanhos · 1 adicionais/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar produto' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/products', expect.any(FormData)))
+    const payload = api.post.mock.calls.find(([path]) => path === '/products')[1]
+    expect(JSON.parse(payload.get('sizeOptions'))).toMatchObject([{ name: '500 ml', description: 'Porção média', price: 15 }])
+    expect(JSON.parse(payload.get('addons'))).toMatchObject([{ name: 'Paçoca', price: 2 }])
+  })
+
   test('vendedor ordena, pausa e salva tamanhos e adicionais sem alterar sabores', async () => {
     localStorage.clear()
     vi.clearAllMocks()
@@ -605,15 +649,24 @@ describe('Galerias no cadastro do vendedor', () => {
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
     fireEvent.click(screen.getByTitle('Editar produto'))
-    expect(screen.getByText('Preço final: R$ 15,00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar opções e adicionais' }))
+    expect(screen.getByRole('heading', { name: 'Opções e adicionais' })).toBeInTheDocument()
+    expect(screen.getByText('R$ 10,00 por unidade')).toBeInTheDocument()
+    const preview = document.querySelector('.option-preview')
+    fireEvent.click([...preview.querySelectorAll('button')].find((button) => button.textContent.includes('500 ml')))
+    fireEvent.click(preview.querySelector('input[type="checkbox"]'))
+    expect(screen.getByText('R$ 17,00 por unidade')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Subir 500 ml' }))
-    const sizeRows = [...document.querySelectorAll('.option-editor')].find((section) => section.textContent.includes('Tamanhos (escolha única)')).querySelectorAll('.option-row')
+    const sizeRows = [...document.querySelectorAll('.option-editor')].find((section) => section.textContent.includes('Tamanhos ou porções')).querySelectorAll('.option-row')
     expect(sizeRows[0].querySelector('input').value).toBe('500 ml')
+    fireEvent.change(sizeRows[0].querySelectorAll('input')[1], { target: { value: 'Porção média' } })
     fireEvent.click(sizeRows[0].querySelector('input[type="checkbox"]'))
+    fireEvent.click(screen.getByRole('button', { name: 'Concluir configuração' }))
+    expect(screen.getByText(/2 tamanhos · 1 adicionais/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(api.put).toHaveBeenCalled())
     const payload = api.put.mock.calls[0][1]
-    expect(JSON.parse(payload.get('sizeOptions'))).toMatchObject([{ name: '500 ml', price: 15, isActive: false }, { name: '300 ml', price: 10, isActive: true }])
+    expect(JSON.parse(payload.get('sizeOptions'))).toMatchObject([{ name: '500 ml', description: 'Porção média', price: 15, isActive: false }, { name: '300 ml', price: 10, isActive: true }])
     expect(JSON.parse(payload.get('addons'))).toMatchObject([{ name: 'Paçoca', price: 2, isActive: true }])
     expect(JSON.parse(payload.get('flavors'))).toMatchObject([{ name: 'Tradicional' }])
   })
@@ -626,7 +679,7 @@ describe('Galerias no cadastro do vendedor', () => {
       { id: '11111111-1111-4111-8111-111111111111', name: 'Laranja', priceAdjustment: 0, imageUrl: '/laranja.png' },
       { id: '22222222-2222-4222-8222-222222222222', name: 'Maracujá', priceAdjustment: 2, imageUrl: '/maracuja.png' },
     ]
-    const product = { id: 1, name: 'Suco', description: 'Bebida', seller: { id: 20, name: 'Vendedor' }, imageUrl: '/suco.png', imageGallery: [], flavors, price: 5, quantity: 5, categoryId: 1, isActive: true }
+    const product = { id: 1, name: 'Suco', description: 'Bebida', seller: { id: 20, name: 'Vendedor' }, imageUrl: '/suco.png', imageGallery: [], flavors, addons: [{ id: '33333333-3333-4333-8333-333333333333', name: 'Gelo', price: 1, imageUrl: '/gelo.png' }], price: 5, quantity: 5, categoryId: 1, isActive: true }
     localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
     api.get.mockImplementation(async (url) => ({ data: { data: ({
       '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [{ id: 1, name: 'Bebidas' }] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] }, '/plans': { plans: [] },
@@ -638,17 +691,23 @@ describe('Galerias no cadastro do vendedor', () => {
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
     fireEvent.click(screen.getByTitle('Editar produto'))
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar opções e adicionais' }))
     const controls = document.querySelectorAll('.flavor-image-control')
-    expect(controls).toHaveLength(2)
+    expect(controls).toHaveLength(3)
     fireEvent.click(controls[0].querySelector('.flavor-image-remove'))
     const photo = new File(['foto'], 'maracuja-nova.jpg', { type: 'image/jpeg' })
     fireEvent.change(controls[1].querySelector('input[type="file"]'), { target: { files: [photo] } })
+    const addonPhoto = new File(['foto'], 'gelo-novo.jpg', { type: 'image/jpeg' })
+    fireEvent.change(controls[2].querySelector('input[type="file"]'), { target: { files: [addonPhoto] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Concluir configuração' }))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(api.put).toHaveBeenCalled())
     const [url, data] = api.put.mock.calls[0]
     expect(url).toBe('/products/1')
     expect(data.get('flavorImageIds')).toBe('["22222222-2222-4222-8222-222222222222"]')
     expect(data.getAll('flavorImages')).toEqual([photo])
+    expect(data.get('addonImageIds')).toBe('["33333333-3333-4333-8333-333333333333"]')
+    expect(data.getAll('addonImages')).toEqual([addonPhoto])
     const savedFlavors = JSON.parse(data.get('flavors'))
     expect(savedFlavors[0]).toMatchObject({ id: flavors[0].id, name: 'Laranja', removeImage: true })
     expect(savedFlavors[1]).toMatchObject({ id: flavors[1].id, name: 'Maracujá', priceAdjustment: 2 })

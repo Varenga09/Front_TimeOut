@@ -2830,6 +2830,10 @@ textarea {
 
 .addon-choice-list input { width: 18px; height: 18px; accent-color: var(--primary); }
 .addon-choice-list strong { white-space: nowrap; }
+.addon-choice-list span small, .flavor-list button span small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+.choice-image { width: 36px; height: 36px; margin-right: 7px; border-radius: 4px; object-fit: cover; vertical-align: middle; }
+.option-summary-line { display: flex !important; align-items: center; gap: 5px; }
+.option-summary-line img { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; }
 .items-list li span small, .cart-item-thumb + div small, .confirmation-items small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .seller-card {
@@ -2961,6 +2965,51 @@ textarea {
 .option-row .icon-button {
   width: 38px;
   height: 38px;
+}
+
+.product-options-entry { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.product-options-entry .ghost-button { justify-content: flex-start; width: 100%; }
+.product-options-entry p, .product-options-entry small { margin: 0; color: var(--muted); font-size: 12px; }
+.product-options-page { width: 100%; min-width: 0; padding-bottom: 36px; }
+.option-page-heading { align-items: end; margin-bottom: 18px; }
+.option-page-heading h2 { margin: 14px 0 2px; }
+.option-page-heading p { margin: 0; color: var(--muted); }
+.option-page-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 18px; align-items: start; }
+.option-page-editors { display: grid; gap: 16px; min-width: 0; }
+.product-options-page .option-editor { padding: 18px; background: #fff; }
+.product-options-page .option-editor-heading h3 { margin: 0; font-size: 18px; }
+.product-options-page .option-editor-heading p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.product-options-page .option-row { grid-template-columns: repeat(3, minmax(0, 1fr)) 38px; align-items: end; }
+.product-options-page .option-row > .icon-button { grid-column: 4; grid-row: 1; }
+.product-options-page .flavor-image-control { grid-column: 1 / -1; }
+.product-options-page .option-row-actions { grid-column: 1 / -1; }
+.option-preview { position: sticky; top: 92px; display: grid; gap: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: #fff; }
+.option-preview h3 { margin: 0; font-size: 17px; }
+.option-preview h4 { margin: 0 0 7px; font-size: 13px; }
+.option-preview > div { display: grid; gap: 6px; }
+.option-preview button, .option-preview label { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: #fff; color: var(--text); text-align: left; cursor: pointer; }
+.option-preview button.selected { border-color: var(--primary); background: #eef5fb; }
+.option-preview button span, .option-preview label span { flex: 1; min-width: 0; font-weight: 700; }
+.option-preview small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
+.option-preview button img, .option-preview label img { width: 38px; height: 38px; object-fit: cover; border-radius: 4px; }
+.option-preview .option-preview-main-image { width: 100%; max-height: 200px; object-fit: contain; }
+.option-preview p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.option-preview-total { font-size: 22px; color: var(--primary); }
+.form-error { margin: 0 0 12px; color: #a32922; font-weight: 700; }
+
+@media (max-width: 900px) {
+  .option-page-layout { grid-template-columns: minmax(0, 1fr); }
+  .option-preview { position: static; }
+}
+
+@media (max-width: 600px) {
+  .option-page-heading { display: grid; gap: 12px; }
+  .option-page-heading .primary-button { width: 100%; }
+  .product-options-page .option-editor-heading { align-items: start; }
+  .product-options-page .option-editor-heading .ghost-button { flex-shrink: 0; }
+  .product-options-page .option-row { grid-template-columns: minmax(0, 1fr) 38px; }
+  .product-options-page .option-row > label { grid-column: 1 / -1; }
+  .product-options-page .option-row > .icon-button { grid-column: 2; grid-row: 4; }
 }
 
 .compact-heading {
