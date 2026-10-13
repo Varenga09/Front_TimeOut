@@ -1649,12 +1649,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const productRequestRef = useRef(0)
   const unsavedProductOptionsRef = useRef(false)
   const productListRequestRef = useRef(0)
+  const autoRefreshRef = useRef(null)
   const marketScrollRef = useRef(0)
   const restoreMarketScrollRef = useRef(false)
   const [productFeedback, setProductFeedback] = useState({ reviews: [], averageRating: 0, reviewsCount: 0 })
   const [productDetailsLoading, setProductDetailsLoading] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [productPagination, setProductPagination] = useState({ page: 1, total: 0, totalPages: 1 })
+  const [productsLoading, setProductsLoading] = useState(false)
+  const [productsLoadingMore, setProductsLoadingMore] = useState(false)
   const [filters, setFilters] = useState({ search: '', categoryId: '' })
   const [userFilters, setUserFilters] = useState({ search: '', role: '', page: 1, limit: 20 })
   const [userPagination, setUserPagination] = useState({ page: 1, total: 0, totalPages: 1 })
@@ -1736,15 +1740,35 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return () => window.cancelAnimationFrame(frame)
   }, [view, productId, products])
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (page = 1) => {
     const requestId = ++productListRequestRef.current
-    const params = {}
+    const params = { page, limit: 10 }
     if (filters.search) params.search = filters.search
     if (filters.categoryId) params.categoryId = filters.categoryId
 
-    const response = await api.get('/products', { params })
-    if (requestId === productListRequestRef.current) setProducts(response.data.data.products)
+    try {
+      const response = await api.get('/products', { params })
+      if (requestId === productListRequestRef.current) {
+        const result = response.data.data
+        setProducts((current) => page === 1 ? result.products : [...current, ...result.products.filter((product) => !current.some((item) => item.id === product.id))])
+        setProductPagination({ page, total: result.total ?? result.products.length, totalPages: result.totalPages ?? 1 })
+      }
+    } finally {
+      if (page === 1 && requestId === productListRequestRef.current) setProductsLoading(false)
+    }
   }, [filters])
+
+  async function loadMoreProducts() {
+    if (productsLoadingMore || productPagination.page >= productPagination.totalPages) return
+    setProductsLoadingMore(true)
+    try {
+      await loadProducts(productPagination.page + 1)
+    } catch (error) {
+      onNotice(getErrorMessage(error))
+    } finally {
+      setProductsLoadingMore(false)
+    }
+  }
 
   const loadCategories = useCallback(async () => {
     const response = await api.get('/categories')
@@ -1879,12 +1903,35 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }, [canUseMarket, isAdmin, isApprovedSeller, isPlatformAdmin, isSeller, loadAccessData, loadAdminMonetization, loadAdminPayoutOverview, loadCategories, loadCoupons, loadEnvironments, loadFinancialOverview, loadOrders, loadPaymentSettings, loadPlans, loadPlatformPayoutOverview, loadProducts, loadSellerOrders, loadUsers, onNotice])
 
   useEffect(() => {
+    const next = {
+      environmentId: user.environmentId,
+      role: user.role,
+      products: JSON.stringify(filters),
+      users: JSON.stringify(userFilters),
+      financial: JSON.stringify(financialQuery),
+      adminFinancial: JSON.stringify(adminFinancialQuery),
+      platformFinancial: JSON.stringify(platformFinancialQuery),
+      applications: applicationPage,
+    }
     const timer = window.setTimeout(() => {
-      refresh()
+      const previous = autoRefreshRef.current
+      autoRefreshRef.current = next
+      if (!previous || previous.environmentId !== next.environmentId || previous.role !== next.role) {
+        refresh()
+        return
+      }
+      const tasks = []
+      if (previous.products !== next.products) tasks.push(loadProducts())
+      if (previous.users !== next.users) tasks.push(loadUsers())
+      if (previous.financial !== next.financial) tasks.push(loadFinancialOverview())
+      if (previous.adminFinancial !== next.adminFinancial) tasks.push(loadAdminPayoutOverview())
+      if (previous.platformFinancial !== next.platformFinancial) tasks.push(loadPlatformPayoutOverview())
+      if (previous.applications !== next.applications) tasks.push(loadAccessData())
+      if (tasks.length) Promise.all(tasks).catch((error) => onNotice(getErrorMessage(error)))
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [refresh, user.environmentId, user.role])
+  }, [applicationPage, filters, userFilters, financialQuery, adminFinancialQuery, platformFinancialQuery, user.environmentId, user.role, refresh, loadProducts, loadUsers, loadFinancialOverview, loadAdminPayoutOverview, loadPlatformPayoutOverview, loadAccessData, onNotice])
 
   const sellerId = cart[0]?.seller.id
   const cartTotal = cart.reduce((sum, item) => sum + getCartUnitPrice(item) * item.cartQuantity, 0)
@@ -2776,9 +2823,19 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       {view === 'market' && canUseMarket && !productId && (
         <MarketView
           products={products}
+          productsLoading={productsLoading}
+          pagination={productPagination}
+          loadingMore={productsLoadingMore}
+          onLoadMore={loadMoreProducts}
           categories={categories}
           filters={filters}
-          onFilter={setFilters}
+          onFilter={(next) => {
+            productListRequestRef.current += 1
+            setProductsLoading(true)
+            setProducts([])
+            setProductPagination({ page: 1, total: 0, totalPages: 1 })
+            setFilters(next)
+          }}
           onAdd={addToCart}
           onOpen={openProduct}
           onRememberSearch={rememberSearch}
@@ -2876,6 +2933,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       {view === 'seller-products' && (
         <SellerProductsView
           products={products.filter((product) => product.seller.id === user.id || isEnvironmentAdmin)}
+          productsLoading={productsLoading}
+          pagination={productPagination}
+          loadingMore={productsLoadingMore}
+          onLoadMore={loadMoreProducts}
           categories={categories}
           onSave={saveProduct}
           onToggle={toggleProduct}
@@ -3025,6 +3086,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
 function MarketView({
   products,
+  productsLoading,
+  pagination,
+  loadingMore,
+  onLoadMore,
   categories,
   filters,
   onFilter,
@@ -3203,7 +3268,8 @@ function MarketView({
           })}
         </div>
 
-        {products.length === 0 ? <EmptyState text="Nenhum produto encontrado." /> : null}
+        {productsLoading ? <p role="status">Carregando produtos...</p> : products.length === 0 ? <EmptyState text="Nenhum produto encontrado." /> : null}
+        {pagination.page < pagination.totalPages ? <button className="ghost-button" type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? 'Carregando...' : `Ver mais produtos (${products.length} de ${pagination.total})`}</button> : null}
       </div>
 
       <aside className="side-panel">
@@ -4359,7 +4425,7 @@ function ProductOptionsPage({ initialOptions, product, onConfirm, onBack, onDirt
   </section>
 }
 
-function SellerProductsView({ products, categories, onSave, onToggle, onDelete, onOptionsDirty }) {
+function SellerProductsView({ products, productsLoading, pagination, loadingMore, onLoadMore, categories, onSave, onToggle, onDelete, onOptionsDirty }) {
   const emptyForm = {
     name: '',
     description: '',
@@ -4585,7 +4651,8 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete, 
             </article>
           ))}
         </div>
-        {visibleProducts.length === 0 ? <EmptyState text="Nenhum produto encontrado neste filtro." /> : null}
+        {productsLoading ? <p role="status">Carregando produtos...</p> : visibleProducts.length === 0 ? <EmptyState text={pagination.page < pagination.totalPages ? 'Nenhum produto encontrado entre os carregados.' : 'Nenhum produto encontrado neste filtro.'} /> : null}
+        {pagination.page < pagination.totalPages ? <button className="ghost-button" type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? 'Carregando...' : 'Carregar mais produtos'}</button> : null}
       </div>
 
       <form className="side-panel" onSubmit={submit}>

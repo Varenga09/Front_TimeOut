@@ -511,7 +511,7 @@ describe('Navegação e isolamento do catálogo', () => {
     render(createElement(App))
     fireEvent.click(await screen.findByRole('button', { name: 'Vitrine' }))
     fireEvent.change(screen.getByPlaceholderText('Buscar produto'), { target: { value: 'suco' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir detalhes de Suco' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Suco' }))
     await screen.findByRole('region', { name: 'Detalhes de Suco' })
     window.history.replaceState({ marketScroll: 120 }, '', '/')
     fireEvent.popState(window, { state: { marketScroll: 120 } })
@@ -776,5 +776,50 @@ describe('Funções por ambiente', () => {
     expect(await screen.findByText('Vendedor · Escola')).toBeInTheDocument()
     expect(screen.getByText('Administrador · Empresa')).toBeInTheDocument()
     expect(screen.queryByText('Cliente')).not.toBeInTheDocument()
+  })
+})
+
+describe('Catálogo paginado', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  test('buscar produtos não recarrega pedidos, planos e notificações', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [], total: 0, totalPages: 0 }, '/categories': { categories: [] },
+      '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    render(createElement(App))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/orders/my-orders'))
+    const ordersBefore = api.get.mock.calls.filter(([url]) => url === '/orders/my-orders').length
+    const plansBefore = api.get.mock.calls.filter(([url]) => url === '/plans').length
+    const notificationsBefore = api.get.mock.calls.filter(([url]) => url === '/access/notifications').length
+    const requestsBefore = api.get.mock.calls.length
+
+    fireEvent.change(screen.getByPlaceholderText('Buscar produto'), { target: { value: 'suco' } })
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/products', { params: { page: 1, limit: 10, search: 'suco' } }))
+    expect(api.get.mock.calls).toHaveLength(requestsBefore + 1)
+    expect(api.get.mock.calls.filter(([url]) => url === '/orders/my-orders')).toHaveLength(ordersBefore)
+    expect(api.get.mock.calls.filter(([url]) => url === '/plans')).toHaveLength(plansBefore)
+    expect(api.get.mock.calls.filter(([url]) => url === '/access/notifications')).toHaveLength(notificationsBefore)
+  })
+
+  test('permite acessar produtos depois da primeira página', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ environmentId: 1, status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const first = { id: 1, name: 'Suco', price: 5, quantity: 2, seller: { id: 20, name: 'Loja' } }
+    const second = { id: 2, name: 'Coxinha', price: 8, quantity: 2, seller: { id: 20, name: 'Loja' } }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url, config) => ({ data: { data: url === '/products'
+      ? { products: config?.params?.page === 2 ? [second] : [first], total: 2, totalPages: 2 }
+      : ({ '/auth/me': { user }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] } })[url] || {} } }))
+    render(createElement(App))
+    expect(await screen.findByRole('button', { name: 'Abrir detalhes de Suco' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver mais produtos (1 de 2)' }))
+    expect(await screen.findByRole('button', { name: 'Abrir detalhes de Coxinha' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('/products', { params: { page: 2, limit: 10 } })
   })
 })
