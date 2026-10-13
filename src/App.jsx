@@ -1589,6 +1589,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     return params.get('timeoutResourceType') === 'seller_application' ? params.get('timeoutResourceId') : null
   })
   const productRequestRef = useRef(0)
+  const productListRequestRef = useRef(0)
   const marketScrollRef = useRef(0)
   const restoreMarketScrollRef = useRef(false)
   const [productFeedback, setProductFeedback] = useState({ reviews: [], averageRating: 0, reviewsCount: 0 })
@@ -1677,12 +1678,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }, [view, productId, products])
 
   const loadProducts = useCallback(async () => {
+    const requestId = ++productListRequestRef.current
     const params = {}
     if (filters.search) params.search = filters.search
     if (filters.categoryId) params.categoryId = filters.categoryId
 
     const response = await api.get('/products', { params })
-    setProducts(response.data.data.products)
+    if (requestId === productListRequestRef.current) setProducts(response.data.data.products)
   }, [filters])
 
   const loadCategories = useCallback(async () => {
@@ -2913,7 +2915,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         </div>
       ) : null}
 
-      {canUseMarket && cartItemsCount > 0 ? (
+      {canUseMarket && !productId && cartItemsCount > 0 ? (
         <button className="floating-cart" type="button" onClick={() => navigateToView('cart')}>
           <ShoppingCart size={22} />
           <span>{cartItemsCount}</span>
