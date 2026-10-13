@@ -4310,6 +4310,52 @@ body,
   backdrop-filter: blur(12px);
 }
 
+.logo-home-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.logo-home-button:focus-visible {
+  outline: 2px solid #ffad1f;
+  outline-offset: 4px;
+}
+
+.topbar-actions { position: relative; }
+
+.topbar-actions .notifications-popover {
+  top: calc(100% + 13px);
+  right: 0;
+}
+
+.modal-backdrop { z-index: 60; }
+
+.account-role-list {
+  display: flex;
+  max-width: 320px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.account-role-list .role-badge {
+  max-width: 100%;
+  height: auto;
+  padding-block: 5px;
+  overflow-wrap: anywhere;
+}
+
+.product-modal-loading {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  padding: 28px;
+}
+
 .topbar-brand {
   display: flex;
   min-width: 0;
@@ -4462,15 +4508,38 @@ body,
   }
 
   .topbar {
-    min-height: 64px;
+    min-height: 88px;
     grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 10px;
+    grid-template-rows: 40px auto;
+    gap: 5px 10px;
     margin: 0 -14px 16px;
     padding: 8px 14px;
   }
 
   .topbar-title {
-    display: none;
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .topbar-title .eyebrow {
+    display: block;
+    margin: 0 0 1px;
+    color: #63758a;
+    font-size: 10px;
+  }
+
+  .topbar-title h1 {
+    font-size: 17px;
+  }
+
+  .topbar-actions {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .topbar-actions .notifications-popover {
+    top: calc(100% + 42px);
   }
 
   .logo-container.topbar-logo {

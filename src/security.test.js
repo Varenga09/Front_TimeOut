@@ -273,3 +273,113 @@ describe('Painel da equipe Time Out', () => {
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/access/platform/environment-applications/7', { status: 'rejected', reason: 'Dados insuficientes para comprovar o vínculo' }))
   })
 })
+
+describe('Navegação e isolamento do catálogo', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    window.history.replaceState({}, '', '/')
+  })
+
+  test('ignora detalhes atrasados de outro produto e não mostra opções em produto sem sabores', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: [], flavors: [], price: 5, quantity: 5, seller: { id: 20, name: 'Loja' } }
+    const coxinha = { id: 2, name: 'Coxinha', imageUrl: '/coxinha.png', imageGallery: [], flavors: [{ name: 'Frango', priceAdjustment: 2 }], price: 8, quantity: 5, seller: { id: 20, name: 'Loja' } }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    let resolveSuco
+    let sucoRequests = 0
+    api.get.mockImplementation((url) => {
+      if (url === '/products/1') {
+        sucoRequests += 1
+        if (sucoRequests === 1) return new Promise((resolve) => { resolveSuco = resolve })
+        return Promise.resolve({ data: { data: { product: suco } } })
+      }
+      const payloads = {
+        '/auth/me': { user }, '/products': { products: [suco, coxinha] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+        '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+        '/products/1/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 }, '/products/2': { product: coxinha }, '/products/2/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 },
+      }
+      return Promise.resolve({ data: { data: payloads[url] || {} } })
+    })
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Vitrine' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Suco' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir detalhes de Coxinha' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Detalhes de Coxinha' })
+    expect(dialog).toHaveTextContent('Frango')
+    expect(dialog.querySelector('.modal-purchase-bar strong')).toHaveTextContent('R$ 10,00')
+    expect(dialog.querySelector('.gallery-main img')).toHaveAttribute('src', '/coxinha.png')
+    fireEvent.click(dialog.querySelector('.purchase-actions .ghost-button'))
+    expect(screen.getByRole('button', { name: 'Carrinho (1)' })).toBeInTheDocument()
+    resolveSuco({ data: { data: { product: suco } } })
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Detalhes de Coxinha' })).toBeInTheDocument())
+    expect(screen.queryByRole('dialog', { name: 'Detalhes de Suco' })).not.toBeInTheDocument()
+    fireEvent.click(dialog.querySelector('.modal-close'))
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir detalhes de Suco' }))
+    const sucoDialog = await screen.findByRole('dialog', { name: 'Detalhes de Suco' })
+    expect(sucoDialog.querySelector('.gallery-main img')).toHaveAttribute('src', '/suco.png')
+    expect(sucoDialog).not.toHaveTextContent('Sabores e opções')
+  })
+
+  test('logo retorna à vitrine sem encerrar sessão ou carrinho', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({ '/auth/me': { user }, '/products': { products: [] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] } })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Histórico de compras' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ir para o início' })[1])
+    expect(screen.getByRole('button', { name: 'Vitrine' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Carrinho (0)' })).toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalledWith('/auth/logout')
+  })
+
+  test('notificações fecham fora ou com Escape e navegam ao destino ao serem lidas', async () => {
+    const user = { id: 50, name: 'Equipe', role: 'platform_admin', environmentId: null, emailVerifiedAt: new Date().toISOString() }
+    const notification = { id: 9, title: 'Nova solicitação', message: 'Há uma solicitação para revisar.', targetView: 'access', resourceType: 'environment_application', resourceId: '7', readAt: null, createdAt: new Date().toISOString() }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] },
+      '/access/notifications': { notifications: [notification] },
+      '/access/platform': { applications: [], sellers: [], environments: [], administrators: [], auditLogs: [] },
+      '/access/admin/accounts': { users: [], total: 0, page: 1, totalPages: 1 },
+      '/payments/platform/overview': { accounts: [], summary: {} },
+    })[url] || {} } }))
+    api.patch.mockResolvedValue({ data: { data: {} } })
+    render(createElement(App))
+    await screen.findByRole('button', { name: 'Equipe Time Out' })
+    await waitFor(() => expect(screen.getByRole('button', { name: /Abrir notificações/ })).toHaveTextContent('1'))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir notificações/ }))
+    fireEvent.pointerDown(screen.getByText('Há uma solicitação para revisar.'))
+    expect(screen.getByText('Há uma solicitação para revisar.')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByText('Há uma solicitação para revisar.')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Abrir notificações/ }))
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByText('Há uma solicitação para revisar.')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Abrir notificações/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Nova solicitação/ }))
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/access/notifications/9/read'))
+    expect(screen.getByRole('button', { name: 'Solicitações' })).toHaveAttribute('aria-current', 'page')
+    expect(window.location.search).toContain('timeoutView=access')
+  })
+})
+
+describe('Funções por ambiente', () => {
+  test('mostra vendedor e administrador em ambientes distintos sem etiqueta Cliente redundante', async () => {
+    const user = { id: 50, name: 'Equipe', role: 'platform_admin', environmentId: null, emailVerifiedAt: new Date().toISOString() }
+    const account = { id: 7, name: 'Pessoa', email: 'pessoa@timeout.test', role: 'customer', memberships: [
+      { id: 1, environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } },
+      { id: 2, environmentId: 2, role: 'environment_admin', status: 'approved', environment: { id: 2, name: 'Empresa', status: 'active' } },
+    ] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/access/platform': { applications: [], sellers: [], environments: [], administrators: [], auditLogs: [] },
+      '/access/admin/accounts': { users: [account], total: 1, page: 1, totalPages: 1 }, '/payments/platform/overview': { accounts: [], summary: {} },
+    })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Contas' }))
+    expect(await screen.findByText('Vendedor · Escola')).toBeInTheDocument()
+    expect(screen.getByText('Administrador · Empresa')).toBeInTheDocument()
+    expect(screen.queryByText('Cliente')).not.toBeInTheDocument()
+  })
+})

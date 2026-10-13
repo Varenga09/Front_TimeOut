@@ -63,6 +63,19 @@ const CART_KEY = '@timeout:web:cart'
 const LEGACY_CART_KEY = '@localfood:web:cart'
 const CLEAR_SESSION_PARAMS = ['clearSession', 'logoutAll']
 const APP_NAVIGATION_EVENT = 'timeout:navigate'
+const NOTIFICATION_VIEWS = {
+  '/access': 'access', '/admin-access': 'admin-access', '/platform': 'platform-access', '/profile': 'profile',
+  '/orders': 'my-orders', '/seller-orders': 'seller-orders', '/payments': 'seller-payments',
+}
+
+function saveNotificationDestination(view, notification = null) {
+  const url = new URL(window.location.href)
+  for (const key of ['timeoutView', 'timeoutResourceType', 'timeoutResourceId']) url.searchParams.delete(key)
+  if (view) url.searchParams.set('timeoutView', view)
+  if (notification?.resourceType) url.searchParams.set('timeoutResourceType', notification.resourceType)
+  if (notification?.resourceId) url.searchParams.set('timeoutResourceId', notification.resourceId)
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 function readCompatibleStorage(primaryKey, legacyKey) {
   const currentValue = localStorage.getItem(primaryKey)
@@ -783,7 +796,9 @@ function LoginScreen({ onSession, onNotice, notice }) {
     <main className="auth-page">
       <section className="auth-panel">
         <div className="brand-header">
-          <Logo />
+          <button className="logo-home-button" type="button" aria-label="Ir para o início" onClick={() => { setMode('login'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+            <Logo />
+          </button>
           <p className="eyebrow-accent">PEDIDOS LOCAIS PARA AMBIENTES FECHADOS</p>
         </div>
 
@@ -1342,16 +1357,46 @@ function Shell({
   onCartClick,
   notifications = [],
   onNotificationRead,
+  onHome,
   children,
 }) {
   const user = session.user
   const profileImage = getAssetUrl(user.profileImageUrl)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const notificationsRef = useRef(null)
   const unreadCount = notifications.filter((item) => !item.readAt).length
 
+  useEffect(() => {
+    if (!notificationsOpen) return undefined
+    const closeOutside = (event) => {
+      if (!notificationsRef.current?.contains(event.target)) setNotificationsOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setNotificationsOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [notificationsOpen])
+
   function closeMobileMenuFromNavigation(event) {
-    if (event.target.closest('button')) setMobileMenuOpen(false)
+    if (event.target.closest('button')) {
+      setMobileMenuOpen(false)
+      setNotificationsOpen(false)
+      saveNotificationDestination(null)
+    }
+  }
+
+  function goHome() {
+    setMobileMenuOpen(false)
+    setNotificationsOpen(false)
+    saveNotificationDestination(null)
+    onHome()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -1367,7 +1412,9 @@ function Shell({
 
       <aside className={mobileMenuOpen ? 'sidebar mobile-open' : 'sidebar'}>
         <div className="sidebar-brand">
-          <Logo className="sidebar-logo" />
+          <button className="logo-home-button" type="button" aria-label="Ir para o início" onClick={goHome}>
+            <Logo className="sidebar-logo" />
+          </button>
           <button
             className="sidebar-close-button"
             type="button"
@@ -1421,27 +1468,29 @@ function Shell({
             className="mobile-menu-button"
             type="button"
             aria-label="Abrir menu"
-            onClick={() => setMobileMenuOpen(true)}
+            onClick={() => { setNotificationsOpen(false); setMobileMenuOpen(true) }}
           >
             <Menu size={21} />
           </button>
           <div className="topbar-brand">
-            <Logo className="topbar-logo" />
+            <button className="logo-home-button" type="button" aria-label="Ir para o início" onClick={goHome}>
+              <Logo className="topbar-logo" />
+            </button>
             <div className="topbar-environment">
               <strong>{user.environment?.name || 'Ambiente local'}</strong>
               <span>{environmentTypeLabels[user.environment?.type] || 'Pedidos locais'}</span>
             </div>
           </div>
           <div className="topbar-title">
-            <p className="eyebrow">Ambiente {environmentTypeLabels[user.environment?.type] || 'local'}</p>
+            <p className="eyebrow">{user.environment?.name || 'Selecione um ambiente'}</p>
             <h1>{pageTitle}</h1>
           </div>
-          <div className="topbar-actions">
+          <div className="topbar-actions" ref={notificationsRef}>
             <button className="notification-button" type="button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Abrir notificações">
               <Bell size={16} />
               {unreadCount > 0 ? <b>{unreadCount}</b> : null}
             </button>
-            {onCartClick ? <button className="topbar-cart-button" type="button" onClick={onCartClick} title="Abrir carrinho">
+            {onCartClick ? <button className="topbar-cart-button" type="button" onClick={() => { setNotificationsOpen(false); onCartClick() }} title="Abrir carrinho">
               <ShoppingCart size={18} />
               <div className="topbar-cart-copy">
                 <span>Carrinho</span>
@@ -1449,13 +1498,12 @@ function Shell({
               </div>
               {cartItemsCount > 0 ? <b>{cartItemsCount}</b> : null}
             </button> : null}
-          </div>
-          {notificationsOpen ? (
-            <div className="notifications-popover">
+            {notificationsOpen ? (
+              <div className="notifications-popover">
               <div className="section-heading compact-heading"><h3>Notificações</h3><span>{unreadCount} não lidas</span></div>
               <div className="notifications-list">
                 {notifications.map((item) => (
-                  <button key={item.id} className={item.readAt ? 'notification-item read' : 'notification-item'} type="button" onClick={() => onNotificationRead?.(item.id)}>
+                  <button key={item.id} className={item.readAt ? 'notification-item read' : 'notification-item'} type="button" onClick={() => { setNotificationsOpen(false); onNotificationRead?.(item) }}>
                     <strong>{item.title}</strong>
                     <span>{item.message}</span>
                     <small>{formatDate(item.createdAt)}</small>
@@ -1463,8 +1511,9 @@ function Shell({
                 ))}
                 {notifications.length === 0 ? <p className="muted-note">Nenhuma notificação.</p> : null}
               </div>
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+          </div>
         </header>
 
         {notice ? <div className="notice">{notice}</div> : null}
@@ -1477,15 +1526,26 @@ function Shell({
 function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const cartStorageKey = `${CART_KEY}:${session.user.id}:${session.user.environmentId}`
   const legacyCartStorageKey = `${LEGACY_CART_KEY}:${session.user.id}:${session.user.environmentId}`
-  const [view, setView] = useState(
-    session.user.role === 'platform_admin'
+  const [view, setView] = useState(() => {
+    const defaultView = session.user.role === 'platform_admin'
       ? 'platform-access'
       : !session.user.environmentId
         ? 'access'
         : session.user.role === 'seller'
           ? 'seller-orders'
-          : 'market',
-  )
+          : 'market'
+    const requested = new URLSearchParams(window.location.search).get('timeoutView')
+    const marketAllowed = session.user.memberships?.some((item) => Number(item.environmentId) === Number(session.user.environmentId) && item.status === 'approved' && item.environment?.status === 'active')
+    if (requested === 'platform-access' && session.user.role === 'platform_admin') return requested
+    if (requested === 'admin-access' && ['admin', 'environment_admin'].includes(session.user.role)) return requested
+    if (requested === 'admin-users' && ['platform_admin', 'admin', 'environment_admin'].includes(session.user.role)) return requested
+    if (requested === 'seller-orders' && ['seller', 'admin', 'environment_admin'].includes(session.user.role)) return requested
+    if (requested === 'seller-payments' && ['seller', 'admin', 'environment_admin'].includes(session.user.role)) return requested
+    if (requested === 'seller-products' && ['seller', 'admin', 'environment_admin'].includes(session.user.role)) return requested
+    if (requested === 'profile' || requested === 'access') return requested
+    if (marketAllowed && ['market', 'my-orders'].includes(requested)) return requested
+    return defaultView
+  })
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [orders, setOrders] = useState([])
@@ -1512,6 +1572,15 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   const [checkoutResult, setCheckoutResult] = useState(null)
   const [cartToast, setCartToast] = useState('')
   const [selectedProduct, setSelectedProduct] = useState(null)
+  const [targetApplicationId, setTargetApplicationId] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('timeoutResourceType') === 'environment_application' ? params.get('timeoutResourceId') : null
+  })
+  const [targetSellerApplicationId, setTargetSellerApplicationId] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('timeoutResourceType') === 'seller_application' ? params.get('timeoutResourceId') : null
+  })
+  const productRequestRef = useRef(0)
   const [productFeedback, setProductFeedback] = useState({ reviews: [], averageRating: 0, reviewsCount: 0 })
   const [productDetailsLoading, setProductDetailsLoading] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
@@ -1764,8 +1833,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
   function buildCartItem(product) {
     const selectedFlavor = product.selectedFlavor || ''
-    const selectedOption = parseProductFlavors(product.flavors).find((option) => option.name === selectedFlavor)
-    const cartUnitPrice = product.cartUnitPrice ?? getOptionPrice(product, selectedOption)
+    const options = parseProductFlavors(product.flavors)
+    const selectedOption = options.find((option) => option.name === selectedFlavor)
+    if ((options.length > 0 && !selectedOption) || (options.length === 0 && selectedFlavor)) {
+      onNotice('Escolha uma opção válida deste produto')
+      return null
+    }
+    const cartUnitPrice = getOptionPrice(product, selectedOption)
 
     return {
       ...product,
@@ -1800,9 +1874,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   async function openProduct(product) {
-    setSelectedProduct(product)
+    const requestId = ++productRequestRef.current
+    setSelectedProduct({ id: product.id, name: product.name })
     setProductFeedback({ reviews: [], averageRating: 0, reviewsCount: 0 })
     setProductDetailsLoading(true)
+    setReviewSubmitting(false)
 
     try {
       const [productResponse, reviewsResponse] = await Promise.all([
@@ -1810,27 +1886,37 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         api.get(`/products/${product.id}/reviews`),
       ])
 
+      if (requestId !== productRequestRef.current) return
+      if (Number(productResponse.data.data.product.id) !== Number(product.id)) {
+        throw new Error('Os detalhes do produto não correspondem ao item selecionado')
+      }
       setSelectedProduct(productResponse.data.data.product)
       setProductFeedback(reviewsResponse.data.data)
     } catch (error) {
-      onNotice(getErrorMessage(error))
+      if (requestId === productRequestRef.current) {
+        setSelectedProduct(null)
+        onNotice(getErrorMessage(error))
+      }
     } finally {
-      setProductDetailsLoading(false)
+      if (requestId === productRequestRef.current) setProductDetailsLoading(false)
     }
   }
 
   async function saveProductReview(productId, payload) {
+    const requestId = productRequestRef.current
     setReviewSubmitting(true)
 
     try {
       await api.post(`/products/${productId}/reviews`, payload)
       const response = await api.get(`/products/${productId}/reviews`)
-      setProductFeedback(response.data.data)
-      onNotice('Avaliação salva')
+      if (requestId === productRequestRef.current) {
+        setProductFeedback(response.data.data)
+        onNotice('Avaliação salva')
+      }
     } catch (error) {
-      onNotice(getErrorMessage(error))
+      if (requestId === productRequestRef.current) onNotice(getErrorMessage(error))
     } finally {
-      setReviewSubmitting(false)
+      if (requestId === productRequestRef.current) setReviewSubmitting(false)
     }
   }
 
@@ -1838,6 +1924,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     if (!canAddProduct(product)) return
 
     const cartItem = buildCartItem(product)
+    if (!cartItem) return
 
     setCart((current) => {
       const existing = current.find((item) =>
@@ -1861,6 +1948,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     if (!canAddProduct(product, true)) return
 
     const cartItem = buildCartItem(product)
+    if (!cartItem) return
     setCart([cartItem])
     setSelectedProduct(null)
     setView('cart')
@@ -2115,15 +2203,17 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     }
   }
 
-  async function switchEnvironment(environmentId) {
+  async function switchEnvironment(environmentId, nextView = 'market') {
     try {
       const response = await api.patch(`/environments/${environmentId}/switch`)
       onSessionUser(response.data.data.user)
-      setView('market')
+      setView(nextView)
       onNotice('Ambiente alterado')
       await refresh()
+      return true
     } catch (error) {
       onNotice(getErrorMessage(error))
+      return false
     }
   }
 
@@ -2294,9 +2384,38 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     } catch (error) { onNotice(getErrorMessage(error)) }
   }
 
-  async function markNotificationRead(id) {
+  async function markNotificationRead(notification) {
+    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: item.readAt || new Date().toISOString() } : item))
+    const targetView = notification.targetView || NOTIFICATION_VIEWS[notification.internalLink] || 'access'
+    const targetMembership = user.memberships?.find((item) => Number(item.environmentId) === Number(notification.environmentId) && item.status === 'approved' && item.environment?.status === 'active')
+    const allowed = targetView === 'platform-access' ? isPlatformAdmin
+      : targetView === 'admin-access' || targetView === 'admin-users' ? isAdmin || isPlatformAdmin || ['admin', 'environment_admin'].includes(targetMembership?.role)
+        : ['seller-orders', 'seller-payments', 'seller-products'].includes(targetView) ? isSeller || ['seller', 'admin', 'environment_admin'].includes(targetMembership?.role)
+          : targetView === 'market' || targetView === 'my-orders' ? canUseMarket || Boolean(targetMembership)
+            : ['access', 'profile'].includes(targetView)
+    const nextView = allowed ? targetView : 'access'
+    if (!allowed) onNotice('Este conteúdo não está disponível para sua conta; abrimos a listagem de solicitações.')
+    let actualView = nextView
+    if (notification.environmentId && Number(notification.environmentId) !== Number(user.environmentId) && nextView !== 'platform-access') {
+      if (!targetMembership || !(await switchEnvironment(notification.environmentId, nextView))) {
+        actualView = 'access'
+        setView('access')
+        onNotice('Você não tem acesso ao ambiente desta notificação.')
+      }
+    } else {
+      setView(nextView)
+    }
+    saveNotificationDestination(actualView, notification)
+    setTargetApplicationId(actualView === 'platform-access' && notification.resourceType === 'environment_application' ? notification.resourceId : null)
+    setTargetSellerApplicationId(actualView === 'admin-access' && notification.resourceType === 'seller_application' ? notification.resourceId : null)
+    if (actualView === 'market' && notification.resourceType === 'product' && notification.resourceId) {
+      openProduct({ id: notification.resourceId, name: 'Produto' })
+    }
+    if (actualView === 'admin-users' && notification.resourceType === 'user' && notification.resourceId) {
+      openAccount(notification.resourceId)
+    }
     try {
-      await api.patch(`/access/notifications/${id}/read`)
+      await api.patch(`/access/notifications/${notification.id}/read`)
       await loadAccessData()
     } catch (error) { onNotice(getErrorMessage(error)) }
   }
@@ -2457,6 +2576,10 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       onCartClick={canUseMarket ? () => setView('cart') : null}
       notifications={notifications}
       onNotificationRead={markNotificationRead}
+      onHome={() => {
+        setView(canUseMarket ? 'market' : 'access')
+        if (canUseMarket) refresh()
+      }}
     >
 
       {view === 'market' && canUseMarket && (
@@ -2629,6 +2752,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
       {view === 'admin-access' && (
         <EnvironmentAccessAdminView
           data={environmentAccess}
+          focusSellerApplicationId={targetSellerApplicationId}
           onReviewSeller={reviewSellerRequest}
           onReviewMembership={reviewMembership}
           onRotateCode={rotateEnvironmentCode}
@@ -2643,6 +2767,7 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         <PlatformAccessView
           data={platformAccess}
           onApplicationPage={setApplicationPage}
+          focusApplicationId={targetApplicationId}
           payoutOverview={platformPayoutOverview}
           onReviewApplication={reviewEnvironmentApplication}
           onToggleEnvironment={toggleEnvironmentStatus}
@@ -2676,12 +2801,12 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
       {selectedProduct ? (
         <ProductDetailModal
-          key={`${selectedProduct.id}-${productDetailsLoading ? 'loading' : 'loaded'}`}
+          key={`${selectedProduct.id}:${productDetailsLoading ? 'loading' : 'ready'}`}
           product={selectedProduct}
           feedback={productFeedback}
           loading={productDetailsLoading}
           currentUserId={user.id}
-          onClose={() => setSelectedProduct(null)}
+          onClose={() => { productRequestRef.current += 1; setSelectedProduct(null) }}
           onAdd={addToCart}
           onBuyNow={buyNow}
           onReview={saveProductReview}
@@ -2908,7 +3033,8 @@ function ProductDetailModal({
   const isUnavailable = product.quantity <= 0 || isOwnProduct
   const myReview = reviews.find((review) => Number(review.user?.id) === Number(currentUserId))
   const [selectedFlavor, setSelectedFlavor] = useState(() => flavors[0]?.name || '')
-  const selectedOption = flavors.find((flavor) => flavor.name === selectedFlavor)
+  const effectiveFlavor = flavors.some((flavor) => flavor.name === selectedFlavor) ? selectedFlavor : (flavors[0]?.name || '')
+  const selectedOption = flavors.find((flavor) => flavor.name === effectiveFlavor)
   const selectedUnitPrice = getOptionPrice(product, selectedOption)
   const selectedOriginalPrice = getOptionOriginalPrice(product, selectedOption)
   const discountLabel = formatDiscount(product)
@@ -2920,6 +3046,15 @@ function ProductDetailModal({
   async function submitReview(event) {
     event.preventDefault()
     await onReview(product.id, reviewForm)
+  }
+
+  if (loading) {
+    return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="product-modal product-modal-loading" role="dialog" aria-modal="true" aria-label={`Carregando ${product.name}`}>
+        <button className="icon-button modal-close" type="button" onClick={onClose} title="Fechar"><X size={18} /></button>
+        <p role="status">Carregando detalhes de {product.name}...</p>
+      </section>
+    </div>
   }
 
   return (
@@ -2965,14 +3100,13 @@ function ProductDetailModal({
             <span>{feedback?.reviewsCount || 0} avaliações</span>
           </div>
 
-          <div className="detail-section">
+          {flavors.length > 0 ? <div className="detail-section">
             <h3>Sabores e opções</h3>
-            {flavors.length > 0 ? (
               <div className="flavor-list">
                 {flavors.map((flavor) => (
                   <button
                     key={flavor.name}
-                    className={selectedFlavor === flavor.name ? 'active' : ''}
+                    className={effectiveFlavor === flavor.name ? 'active' : ''}
                     type="button"
                     onClick={() => setSelectedFlavor(flavor.name)}
                   >
@@ -2981,10 +3115,7 @@ function ProductDetailModal({
                   </button>
                 ))}
               </div>
-            ) : (
-              <p className="muted-note">O vendedor ainda não informou sabores ou opções.</p>
-            )}
-          </div>
+          </div> : null}
 
           <div className="seller-card">
             <div className="profile-avatar">
@@ -3009,7 +3140,7 @@ function ProductDetailModal({
               <button
                 className="primary-button compact-button"
                 type="button"
-                onClick={() => onBuyNow({ ...product, selectedFlavor, cartUnitPrice: selectedUnitPrice })}
+                onClick={() => onBuyNow({ ...product, selectedFlavor: effectiveFlavor, cartUnitPrice: selectedUnitPrice })}
                 disabled={isUnavailable}
               >
                 <CreditCard size={18} />
@@ -3018,7 +3149,7 @@ function ProductDetailModal({
               <button
                 className="ghost-button compact-button"
                 type="button"
-                onClick={() => onAdd({ ...product, selectedFlavor, cartUnitPrice: selectedUnitPrice })}
+                onClick={() => onAdd({ ...product, selectedFlavor: effectiveFlavor, cartUnitPrice: selectedUnitPrice })}
                 disabled={isUnavailable}
               >
                 <Plus size={18} />
@@ -4753,11 +4884,26 @@ function ApplicationList({ title, applications }) {
   )
 }
 
-function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, onRotateCode, onToggleCode, onRevealCpf, onViewDocument, onNotice }) {
+function EnvironmentAccessAdminView({ data, focusSellerApplicationId, onReviewSeller, onReviewMembership, onRotateCode, onToggleCode, onRevealCpf, onViewDocument, onNotice }) {
   const [pendingAction, setPendingAction] = useState(null)
   const [regularity, setRegularity] = useState(null)
   const [revealedCpf, setRevealedCpf] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const lastFocusedApplicationRef = useRef(null)
+  useEffect(() => {
+    if (!focusSellerApplicationId || !data || lastFocusedApplicationRef.current === focusSellerApplicationId) return undefined
+    lastFocusedApplicationRef.current = focusSellerApplicationId
+    const application = data.sellerApplications?.find((item) => String(item.id) === String(focusSellerApplicationId))
+    if (!application) {
+      onNotice('A solicitação não está mais disponível neste ambiente. Consulte a listagem.')
+      return undefined
+    }
+    let active = true
+    api.get(`/access/environment-admin/sellers/${application.userId}/regularity`)
+      .then((response) => { if (active) setRegularity(response.data.data) })
+      .catch((error) => { if (active) onNotice(`Não foi possível abrir a solicitação: ${getErrorMessage(error)}`) })
+    return () => { active = false }
+  }, [data, focusSellerApplicationId, onNotice])
   async function openRegularity(userId) {
     setDetailLoading(true)
     try {
@@ -4797,13 +4943,21 @@ function EnvironmentAccessAdminView({ data, onReviewSeller, onReviewMembership, 
   )
 }
 
-function PlatformAccessView({ data, payoutOverview, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onViewSellerDocument, onRevealCpf, onRevealSellerCpf, onNotice, onApplicationPage, financialQuery, onFinancialQuery, onRetrySettlement }) {
+function PlatformAccessView({ data, payoutOverview, focusApplicationId, onReviewApplication, onToggleEnvironment, onTransferEnvironment, onToggleAdministrator, onViewDocument, onViewSellerDocument, onRevealCpf, onRevealSellerCpf, onNotice, onApplicationPage, financialQuery, onFinancialQuery, onRetrySettlement }) {
   const [transfers, setTransfers] = useState({})
   const [pendingAction, setPendingAction] = useState(null)
   const [detail, setDetail] = useState(null)
   const [revealedCpf, setRevealedCpf] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [sellerDetail, setSellerDetail] = useState(null)
+  useEffect(() => {
+    if (!focusApplicationId) return undefined
+    let active = true
+    api.get(`/access/platform/environment-applications/${focusApplicationId}`)
+      .then((response) => { if (active) setDetail(response.data.data) })
+      .catch((error) => { if (active) onNotice(`Não foi possível abrir a solicitação: ${getErrorMessage(error)}. Consulte a listagem.`) })
+    return () => { active = false }
+  }, [focusApplicationId, onNotice])
   async function openDetail(id) {
     setDetailLoading(true)
     try {
@@ -5248,7 +5402,7 @@ function AccountManagementDialog({ data, currentUserId, onClose, onAction }) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="administrative-dialog wide-dialog" role="dialog" aria-modal="true" aria-label={`Gerenciar ${account.name}`}>
         <div className="section-heading compact-heading"><div><h3>{account.name}</h3><span>{account.email}</span></div><button type="button" className="icon-button" onClick={onClose} title="Fechar"><X size={18} /></button></div>
-        <p>{roleLabel(account.role)} · {account.isSuspended ? 'Conta suspensa' : 'Conta ativa'} · {account.emailVerifiedAt ? 'E-mail confirmado' : 'E-mail pendente'}</p>
+        <p>{accountRoleLabels(account, data.memberships).map((item) => item.label).join(' · ')} · {account.isSuspended ? 'Conta suspensa' : 'Conta ativa'} · {account.emailVerifiedAt ? 'E-mail confirmado' : 'E-mail pendente'}</p>
         <div className="approval-form-grid"><label>Nome<input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label><label>Telefone<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label></div>
         {!ownAccount && <div className="row-actions"><button className="ghost-button" type="button" onClick={() => setPending({ title: 'Corrigir dados', description: 'A alteração de nome ou telefone será auditada.', run: () => onAction('profile', { name, phone }) })}><Check size={16} /> Salvar dados</button><button className="ghost-button" type="button" onClick={() => setPending({ title: 'Encerrar sessões', description: 'Todos os dispositivos precisarão entrar novamente.', reasonRequired: true, run: (reason) => onAction('sessions', { reason }) })}><LogOut size={16} /> Encerrar sessões</button><button className="ghost-button" type="button" onClick={() => setPending({ title: 'Solicitar nova confirmação', description: 'O e-mail atual permanecerá igual. A pessoa terá que confirmar novamente.', reasonRequired: true, run: (reason) => onAction('email', { reason }) })}><MailCheck size={16} /> Confirmar e-mail novamente</button><button className="ghost-button danger-text" type="button" onClick={() => setPending({ title: account.isSuspended ? 'Reativar conta' : 'Suspender conta', description: 'Esta ação encerra as sessões atuais e preserva pedidos e histórico.', reasonRequired: !account.isSuspended, run: (reason) => onAction('status', { suspended: !account.isSuspended, reason }) })}><Ban size={16} /> {account.isSuspended ? 'Reativar' : 'Suspender'}</button></div>}
         <div className="section-heading compact-heading"><h3>Participações</h3><span>{data.memberships?.length || 0}</span></div>
@@ -5320,7 +5474,9 @@ function AdminUsersView({ users, pagination, isPlatformAdmin, currentUserId, fil
                 {item.cpfVerifiedAt ? 'CPF matematicamente validado' : 'CPF não validado'}
               </span>
             </div>
-            <span className={`role-badge ${item.role}`}>{roleLabel(item.role)}</span>
+            <div className="account-role-list">
+              {accountRoleLabels(item, item.memberships).map((role) => <span className={`role-badge ${role.role}`} key={role.label}>{role.label}</span>)}
+            </div>
             <div className="row-actions">
               <button
                 className="icon-button"
@@ -5490,6 +5646,21 @@ function roleLabel(role) {
   if (role === 'admin' || role === 'environment_admin') return 'Administrador do ambiente'
   if (role === 'platform_admin') return 'Equipe Time Out'
   return 'Cliente'
+}
+
+function accountRoleLabels(user, memberships = []) {
+  const roles = []
+  if (user.role === 'platform_admin') roles.push({ role: 'platform_admin', label: 'Equipe Time Out' })
+  for (const membership of memberships || []) {
+    if (!['approved', 'suspended'].includes(membership.status)) continue
+    if (!['seller', 'admin', 'environment_admin'].includes(membership.role)) continue
+    const role = membership.role === 'seller' ? 'seller' : 'environment_admin'
+    const label = `${role === 'seller' ? 'Vendedor' : 'Administrador'} · ${membership.environment?.name || `Ambiente #${membership.environmentId}`}`
+    if (!roles.some((item) => item.label === label)) roles.push({ role, label })
+  }
+  if (roles.length === 0 && user.role !== 'customer') roles.push({ role: user.role, label: roleLabel(user.role) })
+  if (roles.length === 0) roles.push({ role: 'customer', label: 'Cliente' })
+  return roles
 }
 
 function phoneStatusLabel(user) {
