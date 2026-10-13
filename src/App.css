@@ -3303,12 +3303,13 @@ textarea {
     flex-direction: column;
   }
 
-  .purchase-actions,
   .floating-cart {
     width: calc(100vw - 28px);
   }
 
   .purchase-actions {
+    width: 100%;
+    min-width: 0;
     flex-direction: column;
     align-items: stretch;
   }
