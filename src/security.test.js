@@ -52,6 +52,27 @@ describe('Tela de acesso', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/register', expect.objectContaining({ email: 'pessoa@timeout.test', environmentAccessCode: undefined })))
   })
 
+  test('preserva os dados preenchidos ao alternar abas e após erro no cadastro', async () => {
+    api.post.mockRejectedValue({ response: { status: 409, data: { message: 'E-mail já cadastrado' } } })
+    render(createElement(App))
+
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@timeout.test' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastro' }))
+    fireEvent.change(screen.getByLabelText('Nome completo'), { target: { value: 'Pessoa Teste' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'SenhaForte#123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastro' }))
+
+    expect(screen.getByLabelText('Nome completo')).toHaveValue('Pessoa Teste')
+    expect(screen.getByLabelText('E-mail')).toHaveValue('pessoa@timeout.test')
+    fireEvent.click(screen.getByRole('button', { name: 'Criar minha conta' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('E-mail já cadastrado'))
+    expect(screen.getByLabelText('Nome completo')).toHaveValue('Pessoa Teste')
+    expect(screen.getByLabelText('E-mail')).toHaveValue('pessoa@timeout.test')
+    expect(screen.getByLabelText('Senha')).toHaveValue('SenhaForte#123')
+  })
+
   test('permite mostrar e ocultar a senha', () => {
     render(createElement(App))
 
