@@ -2810,6 +2810,28 @@ textarea {
   color: var(--primary);
 }
 
+.addon-choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.addon-choice-list label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--background);
+  cursor: pointer;
+}
+
+.addon-choice-list input { width: 18px; height: 18px; accent-color: var(--primary); }
+.addon-choice-list strong { white-space: nowrap; }
+.items-list li span small, .cart-item-thumb + div small, .confirmation-items small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
 .seller-card {
   gap: 12px;
   border: 1px solid var(--border);
@@ -2896,6 +2918,14 @@ textarea {
   border-bottom: 1px solid #e1e7ed;
 }
 
+.option-row > .icon-button { grid-column: 3; grid-row: 1; }
+.option-row-actions { grid-column: 1 / 3; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.option-row-actions label { display: inline-flex; align-items: center; gap: 5px; margin-right: auto; }
+.option-row-actions input { width: 16px; height: 16px; accent-color: var(--primary); }
+.option-row-actions button { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--primary); cursor: pointer; }
+.option-row-actions button:disabled { opacity: .4; cursor: default; }
+.option-final-price { grid-column: 1 / 3; font-size: 12px; font-weight: 800; color: var(--primary); }
+
 .flavor-image-control {
   grid-column: 1 / 3;
   display: flex;
@@ -2923,6 +2953,9 @@ textarea {
 @media (max-width: 600px) {
   .option-row { grid-template-columns: minmax(0, 1fr) 38px; }
   .option-row > label:first-child, .flavor-image-control { grid-column: 1 / -1; }
+  .option-row > label:nth-child(2) { grid-column: 1; }
+  .option-row > .icon-button { grid-column: 2; grid-row: 2; }
+  .option-row-actions, .option-final-price { grid-column: 1 / -1; }
 }
 
 .option-row .icon-button {

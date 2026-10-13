@@ -291,6 +291,42 @@ function parseProductFlavors(value) {
   return []
 }
 
+function parseChoiceOptions(value) {
+  if (Array.isArray(value)) return value.filter((option) => option && typeof option === 'object' && option.id && option.name)
+  if (typeof value !== 'string') return []
+  try {
+    return parseChoiceOptions(JSON.parse(value))
+  } catch {
+    return []
+  }
+}
+
+function getCartConfigurationKey(item) {
+  return JSON.stringify([item.id, item.selectedFlavor || '', item.selectedSizeId || '', [...(item.selectedAddonIds || [])].sort()])
+}
+
+function getOrderOptionsSnapshot(item) {
+  if (item.optionsSnapshot && typeof item.optionsSnapshot === 'object') return item.optionsSnapshot
+  if (typeof item.optionsSnapshot !== 'string') return null
+  try { return JSON.parse(item.optionsSnapshot) } catch { return null }
+}
+
+function getSelectionPricing(product, flavor = null, size = null, addons = []) {
+  const baseCents = Math.round(Number(size?.price ?? product.price ?? 0) * 100) + Math.round(Number(flavor?.priceAdjustment || 0) * 100)
+  const discount = getProductDiscount(product)
+  const discountCents = discount?.type === 'percentage'
+    ? Math.round(baseCents * Number(discount.value) / 100)
+    : discount ? Math.round(Number(discount.value) * 100) : 0
+  const discountedBaseCents = discount ? Math.max(1, baseCents - discountCents) : baseCents
+  const addonCents = addons.reduce((sum, addon) => sum + Math.round(Number(addon.price || 0) * 100), 0)
+  return {
+    base: baseCents / 100,
+    discount: (baseCents - discountedBaseCents) / 100,
+    addonsTotal: addonCents / 100,
+    unit: (discountedBaseCents + addonCents) / 100,
+  }
+}
+
 function normalizeProductOption(item) {
   if (typeof item === 'string') {
     const name = item.trim()
@@ -307,6 +343,7 @@ function normalizeProductOption(item) {
     name,
     priceAdjustment: parseMoneyValue(item.priceAdjustment ?? item.priceDelta ?? item.additionalPrice ?? 0),
     imageUrl: item.imageUrl || null,
+    isActive: item.isActive !== false,
   }
 }
 
@@ -316,8 +353,9 @@ function newFlavorId() {
 
 function getCartImage(item) {
   if (item.cartImageUrl) return item.cartImageUrl
+  const size = parseChoiceOptions(item.sizeOptions).find((option) => option.id === item.selectedSizeId)
   const option = parseProductFlavors(item.flavors).find((flavor) => flavor.name === item.selectedFlavor)
-  return option?.imageUrl || item.imageUrl
+  return size?.imageUrl || option?.imageUrl || item.imageUrl
 }
 
 function getOrderItemImage(item) {
@@ -1898,19 +1936,38 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   function buildCartItem(product) {
     const selectedFlavor = product.selectedFlavor || ''
     const options = parseProductFlavors(product.flavors)
-    const selectedOption = options.find((option) => option.name === selectedFlavor)
+    const selectedOption = options.find((option) => option.name === selectedFlavor && option.isActive !== false)
     if ((options.length > 0 && !selectedOption) || (options.length === 0 && selectedFlavor)) {
       onNotice('Escolha uma opção válida deste produto')
       return null
     }
-    const cartUnitPrice = getOptionPrice(product, selectedOption)
+    const sizes = parseChoiceOptions(product.sizeOptions)
+    const selectedSize = sizes.find((option) => option.id === product.selectedSizeId && option.isActive !== false)
+    if ((sizes.length > 0 && !selectedSize) || (sizes.length === 0 && product.selectedSizeId)) {
+      onNotice('Escolha um tamanho disponível')
+      return null
+    }
+    const addonIds = [...new Set(product.selectedAddonIds || [])].sort()
+    const availableAddons = parseChoiceOptions(product.addons)
+    const selectedAddons = addonIds.map((id) => availableAddons.find((option) => option.id === id && option.isActive !== false))
+    if (selectedAddons.some((option) => !option)) {
+      onNotice('Escolha adicionais disponíveis deste produto')
+      return null
+    }
+    const pricing = getSelectionPricing(product, selectedOption, selectedSize, selectedAddons)
 
     return {
       ...product,
       selectedFlavor,
       selectedFlavorId: selectedOption?.id || null,
-      cartImageUrl: selectedOption?.imageUrl || product.imageUrl,
-      cartUnitPrice,
+      selectedSizeId: selectedSize?.id || null,
+      selectedSizeName: selectedSize?.name || null,
+      selectedAddonIds: addonIds,
+      cartAddons: selectedAddons.map(({ id, name, price }) => ({ id, name, price })),
+      cartBasePrice: pricing.base,
+      cartDiscount: pricing.discount,
+      cartImageUrl: selectedSize?.imageUrl || selectedOption?.imageUrl || product.imageUrl,
+      cartUnitPrice: pricing.unit,
       cartQuantity: Math.max(1, Math.min(Number(product.selectedQuantity) || 1, Number(product.quantity))),
     }
   }
@@ -1928,6 +1985,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
     if (product.quantity <= 0) {
       onNotice('Produto sem estoque')
+      return false
+    }
+
+    if (!replaceCart && cart.filter((item) => item.id === product.id).reduce((sum, item) => sum + item.cartQuantity, 0) + (Number(product.selectedQuantity) || 1) > product.quantity) {
+      onNotice('A quantidade total deste produto ultrapassa o estoque')
       return false
     }
 
@@ -2041,11 +2103,11 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
 
     setCart((current) => {
       const existing = current.find((item) =>
-        item.id === cartItem.id && (item.selectedFlavor || '') === cartItem.selectedFlavor
+        getCartConfigurationKey(item) === getCartConfigurationKey(cartItem)
       )
       if (existing) {
         return current.map((item) =>
-          item.id === cartItem.id && (item.selectedFlavor || '') === cartItem.selectedFlavor
+          getCartConfigurationKey(item) === getCartConfigurationKey(cartItem)
             ? { ...item, cartQuantity: Math.min(item.cartQuantity + cartItem.cartQuantity, item.quantity) }
             : item,
         )
@@ -2071,18 +2133,16 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
     showCartToast(`${product.name} pronto para finalizar`)
   }
 
-  function removeFromCart(productId, selectedFlavor = '') {
-    setCart((current) => current.filter((item) =>
-      !(item.id === productId && (item.selectedFlavor || '') === selectedFlavor)
-    ))
+  function removeFromCart(configurationKey) {
+    setCart((current) => current.filter((item) => getCartConfigurationKey(item) !== configurationKey))
   }
 
-  function changeCartQuantity(productId, delta, selectedFlavor = '') {
+  function changeCartQuantity(configurationKey, delta) {
     setCart((current) =>
       current
         .map((item) =>
-          item.id === productId && (item.selectedFlavor || '') === selectedFlavor
-            ? { ...item, cartQuantity: Math.max(1, Math.min(item.quantity, item.cartQuantity + delta)) }
+          getCartConfigurationKey(item) === configurationKey
+            ? { ...item, cartQuantity: Math.max(1, Math.min(item.quantity - current.filter((other) => other.id === item.id && getCartConfigurationKey(other) !== configurationKey).reduce((sum, other) => sum + other.cartQuantity, 0), item.cartQuantity + delta)) }
             : item,
         )
         .filter((item) => item.cartQuantity > 0),
@@ -2111,6 +2171,8 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
         items: cart.map((item) => ({
           productId: item.id,
           selectedFlavor: item.selectedFlavor || undefined,
+          selectedSizeId: item.selectedSizeId || undefined,
+          selectedAddonIds: item.selectedAddonIds || [],
           quantity: item.cartQuantity,
         })),
       })
@@ -2166,11 +2228,13 @@ function Dashboard({ session, notice, onLogout, onNotice, onSessionUser }) {
   }
 
   async function saveProduct(payload, productId = null) {
-    const { imageFile, galleryFiles = [], flavorImageFiles = [], ...productData } = payload
+    const { imageFile, galleryFiles = [], flavorImageFiles = [], sizeImageFiles = [], ...productData } = payload
     const requestData = toFormData(productData, 'image', imageFile)
     galleryFiles.forEach((file) => requestData.append('images', file))
     requestData.append('flavorImageIds', JSON.stringify(flavorImageFiles.map(({ id }) => id)))
     flavorImageFiles.forEach(({ file }) => requestData.append('flavorImages', file))
+    requestData.append('sizeImageIds', JSON.stringify(sizeImageFiles.map(({ id }) => id)))
+    sizeImageFiles.forEach(({ file }) => requestData.append('sizeImages', file))
 
     try {
       if (productId) {
@@ -3049,11 +3113,14 @@ function MarketView({
             const isOwnProduct = Number(product.seller?.id) === Number(currentUserId)
             const isUnavailable = product.quantity <= 0 || isOwnProduct
             const productOptions = parseProductFlavors(product.flavors)
-            const optionPrices = productOptions.map((option) => getOptionPrice(product, option))
+            const sizes = parseChoiceOptions(product.sizeOptions).filter((option) => option.isActive !== false)
+            const optionPrices = sizes.length > 0
+              ? sizes.map((size) => getSelectionPricing(product, null, size).unit)
+              : productOptions.map((option) => getOptionPrice(product, option))
             const lowestPrice = optionPrices.length
-              ? Math.min(getOptionPrice(product), ...optionPrices)
+              ? Math.min(...optionPrices)
               : getOptionPrice(product)
-            const hasVariablePrice = optionPrices.some((price) => price !== getOptionPrice(product))
+            const hasVariablePrice = sizes.length > 0 || optionPrices.some((price) => price !== getOptionPrice(product))
             const discountLabel = formatDiscount(product)
 
             return (
@@ -3103,7 +3170,7 @@ function MarketView({
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
-                        if (productOptions.length > 0) {
+                        if (productOptions.length > 0 || sizes.length > 0 || parseChoiceOptions(product.addons).length > 0) {
                           onOpen(product)
                           return
                         }
@@ -3158,7 +3225,9 @@ function ProductDetailPage({
   reviewSubmitting,
 }) {
   const reviews = feedback?.reviews || []
-  const flavors = parseProductFlavors(product.flavors)
+  const flavors = parseProductFlavors(product.flavors).filter((option) => option.isActive !== false)
+  const sizes = parseChoiceOptions(product.sizeOptions).filter((option) => option.isActive !== false)
+  const addons = parseChoiceOptions(product.addons).filter((option) => option.isActive !== false)
   const productImages = getProductImages(product)
   const [gallerySelection, setGallerySelection] = useState(null)
   const sellerImage = getAssetUrl(product.seller?.profileImageUrl)
@@ -3166,12 +3235,15 @@ function ProductDetailPage({
   const isUnavailable = product.quantity <= 0 || isOwnProduct
   const myReview = reviews.find((review) => Number(review.user?.id) === Number(currentUserId))
   const [selectedFlavor, setSelectedFlavor] = useState(() => flavors[0]?.name || '')
+  const [selectedSizeId, setSelectedSizeId] = useState('')
+  const [selectedAddonIds, setSelectedAddonIds] = useState([])
   const [quantity, setQuantity] = useState(1)
   const effectiveFlavor = flavors.some((flavor) => flavor.name === selectedFlavor) ? selectedFlavor : (flavors[0]?.name || '')
   const selectedOption = flavors.find((flavor) => flavor.name === effectiveFlavor)
-  const activeImage = gallerySelection || getAssetUrl(selectedOption?.imageUrl) || getAssetUrl(product.imageUrl) || productImages[0] || ''
-  const selectedUnitPrice = getOptionPrice(product, selectedOption)
-  const selectedOriginalPrice = getOptionOriginalPrice(product, selectedOption)
+  const selectedSize = sizes.find((size) => size.id === selectedSizeId)
+  const selectedAddons = addons.filter((addon) => selectedAddonIds.includes(addon.id))
+  const pricing = getSelectionPricing(product, selectedOption, selectedSize, selectedAddons)
+  const activeImage = gallerySelection || getAssetUrl(selectedSize?.imageUrl) || getAssetUrl(selectedOption?.imageUrl) || getAssetUrl(product.imageUrl) || productImages[0] || ''
   const discountLabel = formatDiscount(product)
   const [reviewForm, setReviewForm] = useState(() => ({
     rating: myReview?.rating || 5,
@@ -3193,7 +3265,7 @@ function ProductDetailPage({
       <div className="product-detail-grid">
         <div className="product-modal-visual">
           <div className="gallery-main">
-            {activeImage ? <img src={activeImage} alt={gallerySelection || !selectedOption?.imageUrl ? product.name : `${product.name} - ${selectedOption.name}`} /> : <ChefHat size={42} />}
+            {activeImage ? <img src={activeImage} alt={gallerySelection ? product.name : `${product.name}${selectedSize?.imageUrl ? ` - ${selectedSize.name}` : selectedOption?.imageUrl ? ` - ${selectedOption.name}` : ''}`} /> : <ChefHat size={42} />}
           </div>
 
           {productImages.length > 1 ? (
@@ -3227,13 +3299,14 @@ function ProductDetailPage({
           </div>
 
           {flavors.length > 0 ? <div className="detail-section">
-            <h3>Sabores e opções</h3>
+            <h3>Sabores (escolha um)</h3>
               <div className="flavor-list">
                 {flavors.map((flavor) => (
                   <button
                     key={flavor.id || flavor.name}
                     className={effectiveFlavor === flavor.name ? 'active' : ''}
                     type="button"
+                    aria-pressed={effectiveFlavor === flavor.name}
                     onClick={() => { setSelectedFlavor(flavor.name); setGallerySelection(null) }}
                   >
                     <span>{flavor.name}</span>
@@ -3241,6 +3314,31 @@ function ProductDetailPage({
                   </button>
                 ))}
               </div>
+          </div> : null}
+
+          {sizes.length > 0 ? <div className="detail-section">
+            <h3>Tamanho (escolha um)</h3>
+            <div className="flavor-list" role="group" aria-label="Tamanho obrigatório">
+              {sizes.map((size) => <button
+                key={size.id}
+                type="button"
+                className={selectedSizeId === size.id ? 'active' : ''}
+                aria-pressed={selectedSizeId === size.id}
+                onClick={() => { setSelectedSizeId(size.id); setGallerySelection(null) }}
+              ><span>{size.name}</span><small>{money.format(Number(size.price))}</small></button>)}
+            </div>
+            {!selectedSize ? <p className="muted-note">Escolha um tamanho para comprar.</p> : null}
+          </div> : null}
+
+          {addons.length > 0 ? <div className="detail-section">
+            <h3>Adicionais (opcionais)</h3>
+            <div className="addon-choice-list">
+              {addons.map((addon) => <label key={addon.id}>
+                <input type="checkbox" checked={selectedAddonIds.includes(addon.id)} onChange={(event) => setSelectedAddonIds((current) => event.target.checked ? [...current, addon.id] : current.filter((id) => id !== addon.id))} />
+                <span>{addon.name}</span>
+                <strong>+{money.format(Number(addon.price))}</strong>
+              </label>)}
+            </div>
           </div> : null}
 
           <div className="seller-card">
@@ -3257,11 +3355,13 @@ function ProductDetailPage({
 
           <div className="modal-purchase-bar">
             <div>
-              <strong>{money.format(selectedUnitPrice)}</strong>
-              {discountLabel ? <small className="old-price">Antes {money.format(selectedOriginalPrice)}</small> : null}
-              {selectedOption && selectedOption.priceAdjustment !== 0 ? (
-                <small>Preço base {money.format(Number(product.price))}</small>
-              ) : null}
+              <strong>{sizes.length > 0 && !selectedSize ? 'Escolha um tamanho' : money.format(pricing.unit)}</strong>
+              {pricing.discount > 0 ? <small className="old-price">Desconto no tamanho/base: -{money.format(pricing.discount)}</small> : null}
+              {selectedSize ? <small>{selectedSize.name}: {money.format(Number(selectedSize.price))}</small> : null}
+              {selectedOption?.priceAdjustment ? <small>Sabor: {formatPriceAdjustment(selectedOption.priceAdjustment)}</small> : null}
+              {selectedAddons.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+              {sizes.length === 0 || selectedSize ? <small>Total para {quantity}: {money.format(pricing.unit * quantity)}</small> : null}
+              {discountLabel ? <small>Desconto do produto somente na base; cupom sobre base e adicionais no fechamento.</small> : null}
               <span>{product.quantity} disponíveis</span>
             </div>
             <div className="product-quantity">
@@ -3276,8 +3376,8 @@ function ProductDetailPage({
               <button
                 className="primary-button compact-button"
                 type="button"
-                onClick={() => onBuyNow({ ...product, selectedFlavor: effectiveFlavor, selectedQuantity: quantity })}
-                disabled={isUnavailable}
+                onClick={() => onBuyNow({ ...product, selectedFlavor: effectiveFlavor, selectedSizeId, selectedAddonIds, selectedQuantity: quantity })}
+                disabled={isUnavailable || (sizes.length > 0 && !selectedSize)}
               >
                 <CreditCard size={18} />
                 Comprar agora
@@ -3285,8 +3385,8 @@ function ProductDetailPage({
               <button
                 className="ghost-button compact-button"
                 type="button"
-                onClick={() => onAdd({ ...product, selectedFlavor: effectiveFlavor, selectedQuantity: quantity })}
-                disabled={isUnavailable}
+                onClick={() => onAdd({ ...product, selectedFlavor: effectiveFlavor, selectedSizeId, selectedAddonIds, selectedQuantity: quantity })}
+                disabled={isUnavailable || (sizes.length > 0 && !selectedSize)}
               >
                 <Plus size={18} />
                 Adicionar ao carrinho
@@ -3415,7 +3515,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
             const unitPrice = getCartUnitPrice(item)
 
             return (
-              <article className="line-card" key={`${item.id}-${item.selectedFlavor || 'default'}`}>
+              <article className="line-card" key={getCartConfigurationKey(item)}>
                 <div className="cart-item-thumb">
                   {getAssetUrl(getCartImage(item)) ? (
                     <img src={getAssetUrl(getCartImage(item))} alt={`${item.name}${item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}`} />
@@ -3429,14 +3529,17 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
                     {money.format(unitPrice)} cada
                     {item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}
                   </p>
+                  {item.selectedSizeName ? <small>Tamanho: {item.selectedSizeName} - {money.format(Number(item.cartBasePrice || 0))}</small> : null}
+                  {item.cartAddons?.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+                  {item.cartDiscount > 0 ? <small>Desconto na base: -{money.format(item.cartDiscount)}</small> : null}
                 </div>
                 <div className="quantity-control">
-                  <button type="button" onClick={() => onQuantity(item.id, -1, item.selectedFlavor || '')}>-</button>
+                  <button type="button" onClick={() => onQuantity(getCartConfigurationKey(item), -1)} aria-label={`Diminuir ${item.name}`}>-</button>
                   <span>{item.cartQuantity}</span>
-                  <button type="button" onClick={() => onQuantity(item.id, 1, item.selectedFlavor || '')}>+</button>
+                  <button type="button" onClick={() => onQuantity(getCartConfigurationKey(item), 1)} aria-label={`Aumentar ${item.name}`}>+</button>
                 </div>
                 <strong>{money.format(unitPrice * item.cartQuantity)}</strong>
-                <button className="icon-button danger" type="button" onClick={() => onRemove(item.id, item.selectedFlavor || '')}>
+                <button className="icon-button danger" type="button" onClick={() => onRemove(getCartConfigurationKey(item))} aria-label={`Remover ${item.name}`}>
                   <Trash2 size={18} />
                 </button>
               </article>
@@ -3491,7 +3594,7 @@ function CartView({ cart, total, sellerPaymentSettings, onRemove, onQuantity, on
             placeholder="Ex: BROWNIE10"
           />
         </label>
-        <p className="muted-note">O cupom é validado quando o pedido é enviado.</p>
+        <p className="muted-note">O cupom é validado sobre o subtotal completo, incluindo tamanhos e adicionais, quando o pedido é enviado. Os valores são recalculados no servidor.</p>
         <label>
           Local combinado
           <input
@@ -3564,6 +3667,20 @@ function CheckoutPaymentView({ result, onOrders, onRefresh, onSimulate }) {
             <strong>{money.format(Number(order.totalPrice || payment.amount || 0))}</strong>
             <small>{paymentLabels[order.paymentMethod] || paymentLabels[payment.method || payment.paymentMethod]}</small>
           </div>
+
+          {order.items?.length > 0 ? <ul className="items-list confirmation-items">
+            {order.items.map((item) => {
+              const snapshot = getOrderOptionsSnapshot(item)
+              return <li key={item.id}><span>
+                {item.quantity}x {item.product?.name || 'Produto'}
+                {snapshot?.size ? <small>{snapshot.size.name}: {money.format(Number(snapshot.size.price))}</small> : null}
+                {snapshot?.flavor ? <small>Sabor: {snapshot.flavor.name}</small> : null}
+                {snapshot?.addons?.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+                {snapshot?.productDiscount > 0 ? <small>Desconto na base: -{money.format(Number(snapshot.productDiscount))}</small> : null}
+                <small>{money.format(Number(item.unitPrice))} por unidade</small>
+              </span><strong>{money.format(Number(item.subtotal))}</strong></li>
+            })}
+          </ul> : null}
 
           {isMock ? (
             <div className="mock-payment-panel">
@@ -4049,6 +4166,10 @@ function OrdersView({ orders, mode, onCancel, onStatus, title }) {
                   <span>
                     {item.quantity}x {item.product.name}
                     {item.selectedFlavor ? ` - ${item.selectedFlavor}` : ''}
+                    {getOrderOptionsSnapshot(item)?.size ? <small>Tamanho: {getOrderOptionsSnapshot(item).size.name} ({money.format(Number(getOrderOptionsSnapshot(item).size.price))})</small> : null}
+                    {getOrderOptionsSnapshot(item)?.addons?.map((addon) => <small key={addon.id}>{addon.name}: +{money.format(Number(addon.price))}</small>)}
+                    {getOrderOptionsSnapshot(item)?.productDiscount > 0 ? <small>Desconto na base: -{money.format(Number(getOrderOptionsSnapshot(item).productDiscount))}</small> : null}
+                    <small>Preço por unidade: {money.format(Number(item.unitPrice))}</small>
                   </span>
                   <strong>{money.format(Number(item.subtotal))}</strong>
                 </li>
@@ -4112,6 +4233,8 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
     name: '',
     description: '',
     flavors: [],
+    sizeOptions: [],
+    addons: [],
     price: '',
     discountType: '',
     discountValue: '',
@@ -4180,6 +4303,8 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
       name: product.name,
       description: product.description || '',
       flavors: parseProductFlavors(product.flavors).map((option) => ({ ...option, id: option.id || newFlavorId(), imageFile: null, removeImage: false })),
+      sizeOptions: parseChoiceOptions(product.sizeOptions).map((option) => ({ ...option, imageFile: null, removeImage: false })),
+      addons: parseChoiceOptions(product.addons),
       price: product.price,
       discountType: product.discountType || '',
       discountValue: product.discountValue || '',
@@ -4210,10 +4335,14 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
             id: option.id,
             name: option.name.trim(),
             priceAdjustment: parseMoneyValue(option.priceAdjustment),
+            isActive: option.isActive !== false,
             removeImage: Boolean(option.removeImage),
           }))
           .filter((option) => option.name),
         flavorImageFiles: form.flavors.filter((option) => option.name.trim() && option.imageFile).map((option) => ({ id: option.id, file: option.imageFile })),
+        sizeOptions: form.sizeOptions.map((option) => ({ id: option.id, name: option.name.trim(), price: parseMoneyValue(option.price), isActive: option.isActive !== false, removeImage: Boolean(option.removeImage) })).filter((option) => option.name),
+        sizeImageFiles: form.sizeOptions.filter((option) => option.name.trim() && option.imageFile).map((option) => ({ id: option.id, file: option.imageFile })),
+        addons: form.addons.map((option) => ({ id: option.id, name: option.name.trim(), price: parseMoneyValue(option.price), isActive: option.isActive !== false })).filter((option) => option.name),
         quantity: Number(form.quantity),
         categoryId: Number(form.categoryId || categories[0]?.id),
         isActive: Boolean(form.isActive),
@@ -4227,7 +4356,7 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
   function addProductOption() {
     setForm((current) => ({
       ...current,
-      flavors: [...current.flavors, { id: newFlavorId(), name: '', priceAdjustment: 0, imageUrl: null, imageFile: null, removeImage: false }],
+      flavors: [...current.flavors, { id: newFlavorId(), name: '', priceAdjustment: 0, isActive: true, imageUrl: null, imageFile: null, removeImage: false }],
     }))
   }
 
@@ -4245,6 +4374,30 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
       ...current,
       flavors: current.flavors.filter((_, optionIndex) => optionIndex !== index),
     }))
+  }
+
+  function addChoice(group) {
+    setForm((current) => ({ ...current, [group]: [...current[group], { id: newFlavorId(), name: '', price: '', isActive: true, imageUrl: null, imageFile: null, removeImage: false }] }))
+  }
+
+  function updateChoice(group, index, patch) {
+    setForm((current) => ({ ...current, [group]: current[group].map((option, position) => position === index ? { ...option, ...patch } : option) }))
+  }
+
+  function removeChoice(group, index) {
+    setForm((current) => ({ ...current, [group]: current[group].filter((_, position) => position !== index) }))
+  }
+
+  function moveChoice(group, index, offset) {
+    setForm((current) => {
+      const options = [...current[group]]
+      const target = index + offset
+      if (target < 0 || target >= options.length) return current
+      const moving = options[index]
+      options[index] = options[target]
+      options[target] = moving
+      return { ...current, [group]: options }
+    })
   }
 
   return (
@@ -4378,8 +4531,8 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
         <div className="option-editor">
           <div className="option-editor-heading">
             <div>
-              <strong>Opções e variações</strong>
-              <span>Cadastre acréscimos ou descontos sobre o preço base.</span>
+              <strong>Sabores e variações exclusivas</strong>
+              <span>Uma opção por unidade. O preço ajusta a base do produto.</span>
             </div>
             <button className="ghost-button" type="button" onClick={addProductOption}>
               <Plus size={16} />
@@ -4407,6 +4560,12 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
                 />
               </label>
               <FlavorImageControl option={option} onChange={(patch) => updateProductOption(index, patch)} />
+              <div className="option-row-actions">
+                <label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateProductOption(index, { isActive: event.target.checked })} /> Ativo</label>
+                <button type="button" onClick={() => moveChoice('flavors', index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || 'sabor'}`}>↑</button>
+                <button type="button" onClick={() => moveChoice('flavors', index, 1)} disabled={index === form.flavors.length - 1} aria-label={`Descer ${option.name || 'sabor'}`}>↓</button>
+              </div>
+              <span className="option-final-price">Preço final: {money.format(Number(form.price || 0) + parseMoneyValue(option.priceAdjustment))}</span>
               <button className="icon-button danger" type="button" onClick={() => removeProductOption(index)} title="Remover opção">
                 <Trash2 size={16} />
               </button>
@@ -4417,6 +4576,40 @@ function SellerProductsView({ products, categories, onSave, onToggle, onDelete }
               Exemplo: Brownie recheado com brigadeiro + R$ 2,00 ou Brownie grande + R$ 6,00.
             </p>
           ) : null}
+        </div>
+        <div className="option-editor">
+          <div className="option-editor-heading">
+            <div><strong>Tamanhos (escolha única)</strong><span>Cada tamanho tem preço próprio. O comprador escolhe exatamente um.</span></div>
+            <button className="ghost-button" type="button" onClick={() => addChoice('sizeOptions')}><Plus size={16} /> Adicionar</button>
+          </div>
+          {form.sizeOptions.map((option, index) => <div className="option-row" key={option.id}>
+            <label>Tamanho<input value={option.name} onChange={(event) => updateChoice('sizeOptions', index, { name: event.target.value })} placeholder="Ex: 500 ml" required /></label>
+            <label>Preço final (R$)<input type="number" min="0.01" step="0.01" value={option.price} onChange={(event) => updateChoice('sizeOptions', index, { price: event.target.value })} required /></label>
+            <FlavorImageControl option={option} onChange={(patch) => updateChoice('sizeOptions', index, patch)} />
+            <div className="option-row-actions">
+              <label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateChoice('sizeOptions', index, { isActive: event.target.checked })} /> Ativo</label>
+              <button type="button" onClick={() => moveChoice('sizeOptions', index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || 'tamanho'}`}>↑</button>
+              <button type="button" onClick={() => moveChoice('sizeOptions', index, 1)} disabled={index === form.sizeOptions.length - 1} aria-label={`Descer ${option.name || 'tamanho'}`}>↓</button>
+            </div>
+            <span className="option-final-price">Preço final: {money.format(getSelectionPricing(form, null, option).unit)}</span>
+            <button className="icon-button danger" type="button" onClick={() => removeChoice('sizeOptions', index)} title="Remover tamanho"><Trash2 size={16} /></button>
+          </div>)}
+        </div>
+        <div className="option-editor">
+          <div className="option-editor-heading">
+            <div><strong>Adicionais (múltipla escolha)</strong><span>O comprador pode marcar vários ou nenhum. Não recebem desconto do produto; cupons incluem os adicionais.</span></div>
+            <button className="ghost-button" type="button" onClick={() => addChoice('addons')}><Plus size={16} /> Adicionar</button>
+          </div>
+          {form.addons.map((option, index) => <div className="option-row" key={option.id}>
+            <label>Adicional<input value={option.name} onChange={(event) => updateChoice('addons', index, { name: event.target.value })} placeholder="Ex: Paçoca" required /></label>
+            <label>Preço (R$)<input type="number" min="0" step="0.01" value={option.price} onChange={(event) => updateChoice('addons', index, { price: event.target.value })} required /></label>
+            <div className="option-row-actions">
+              <label><input type="checkbox" checked={option.isActive !== false} onChange={(event) => updateChoice('addons', index, { isActive: event.target.checked })} /> Ativo</label>
+              <button type="button" onClick={() => moveChoice('addons', index, -1)} disabled={index === 0} aria-label={`Subir ${option.name || 'adicional'}`}>↑</button>
+              <button type="button" onClick={() => moveChoice('addons', index, 1)} disabled={index === form.addons.length - 1} aria-label={`Descer ${option.name || 'adicional'}`}>↓</button>
+            </div>
+            <button className="icon-button danger" type="button" onClick={() => removeChoice('addons', index)} title="Remover adicional"><Trash2 size={16} /></button>
+          </div>)}
         </div>
         <label>
           Categoria

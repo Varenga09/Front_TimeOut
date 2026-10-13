@@ -303,6 +303,48 @@ describe('Navegação e isolamento do catálogo', () => {
     window.history.replaceState({}, '', '/')
   })
 
+  test('tamanhos exclusivos e adicionais cumulativos formam combinações distintas no carrinho', async () => {
+    const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const product = { id: 8, name: 'Açaí', price: 10, quantity: 10, imageUrl: '/acai.png', seller: { id: 20, name: 'Loja' }, sizeOptions: [
+      { id: '11111111-1111-4111-8111-111111111111', name: '300 ml', price: 10, isActive: true },
+      { id: '22222222-2222-4222-8222-222222222222', name: '500 ml', price: 15, imageUrl: '/500.png', isActive: true },
+    ], addons: [
+      { id: '33333333-3333-4333-8333-333333333333', name: 'Paçoca', price: 2, isActive: true },
+      { id: '44444444-4444-4444-8444-444444444444', name: 'Leite em pó', price: 3, isActive: true },
+    ] }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [] }, '/orders/my-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+      '/products/8': { product }, '/products/8/reviews': { reviews: [], averageRating: 0, reviewsCount: 0 },
+    })[url] || {} } }))
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir detalhes de Açaí' }))
+    const page = await screen.findByRole('region', { name: 'Detalhes de Açaí' })
+    expect(screen.getByRole('button', { name: 'Adicionar ao carrinho' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /500 ml/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Paçoca/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Leite em pó/ }))
+    expect(page).toHaveTextContent('R$ 20,00')
+    expect(page.querySelector('.gallery-main img')).toHaveAttribute('src', '/500.png')
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar ao carrinho' }))
+    fireEvent.click(screen.getByRole('button', { name: /300 ml/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Leite em pó/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar ao carrinho' }))
+    fireEvent.click(screen.getByTitle('Abrir carrinho'))
+    expect(await screen.findByRole('heading', { name: 'Carrinho' })).toBeInTheDocument()
+    expect(document.querySelectorAll('.main-column .line-card')).toHaveLength(2)
+    expect(screen.getByText('Tamanho: 500 ml - R$ 15,00')).toBeInTheDocument()
+    expect(screen.getByText('Tamanho: 300 ml - R$ 10,00')).toBeInTheDocument()
+    expect(screen.getAllByText('Paçoca: +R$ 2,00')).toHaveLength(2)
+    api.post.mockResolvedValue({ data: { data: { order: { id: 30 }, payment: null } } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar pedido' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/orders', expect.objectContaining({ items: [
+      expect.objectContaining({ productId: 8, selectedSizeId: product.sizeOptions[1].id, selectedAddonIds: [product.addons[0].id, product.addons[1].id] }),
+      expect.objectContaining({ productId: 8, selectedSizeId: product.sizeOptions[0].id, selectedAddonIds: [product.addons[0].id] }),
+    ] })))
+  })
+
   test('foto e preço acompanham o sabor; galeria não muda a escolha e carrinho recebe a foto certa', async () => {
     const user = { id: 10, name: 'Cliente', role: 'customer', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'customer', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
     const suco = { id: 1, name: 'Suco', imageUrl: '/suco.png', imageGallery: ['/extra.png'], flavors: [
@@ -545,6 +587,36 @@ describe('Navegação e isolamento do catálogo', () => {
 })
 
 describe('Galerias no cadastro do vendedor', () => {
+  test('vendedor ordena, pausa e salva tamanhos e adicionais sem alterar sabores', async () => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+    const user = { id: 20, name: 'Vendedor', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: [{ id: 1, environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }] }
+    const product = { id: 8, name: 'Açaí', description: '', seller: { id: 20, name: 'Vendedor' }, flavors: [{ id: '99999999-9999-4999-8999-999999999999', name: 'Tradicional', priceAdjustment: 0 }], price: 10, quantity: 9, categoryId: 1, isActive: true,
+      sizeOptions: [{ id: '11111111-1111-4111-8111-111111111111', name: '300 ml', price: 10, isActive: true }, { id: '22222222-2222-4222-8222-222222222222', name: '500 ml', price: 15, isActive: true }],
+      addons: [{ id: '33333333-3333-4333-8333-333333333333', name: 'Paçoca', price: 2, isActive: true }],
+    }
+    localStorage.getItem.mockImplementation((key) => key.includes('session') ? JSON.stringify({ token: 'teste', user }) : null)
+    api.get.mockImplementation(async (url) => ({ data: { data: ({
+      '/auth/me': { user }, '/products': { products: [product] }, '/categories': { categories: [{ id: 1, name: 'Doces' }] }, '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] }, '/plans': { plans: [] },
+      '/access/me/applications': { sellerApplications: [], environmentApplications: [] }, '/access/notifications': { notifications: [] },
+    })[url] || {} } }))
+    api.put.mockResolvedValue({ data: { data: {} } })
+    render(createElement(App))
+    fireEvent.click(await screen.findByRole('button', { name: 'Meus produtos' }))
+    fireEvent.click(screen.getByTitle('Editar produto'))
+    expect(screen.getByText('Preço final: R$ 15,00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Subir 500 ml' }))
+    const sizeRows = [...document.querySelectorAll('.option-editor')].find((section) => section.textContent.includes('Tamanhos (escolha única)')).querySelectorAll('.option-row')
+    expect(sizeRows[0].querySelector('input').value).toBe('500 ml')
+    fireEvent.click(sizeRows[0].querySelector('input[type="checkbox"]'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(api.put).toHaveBeenCalled())
+    const payload = api.put.mock.calls[0][1]
+    expect(JSON.parse(payload.get('sizeOptions'))).toMatchObject([{ name: '500 ml', price: 15, isActive: false }, { name: '300 ml', price: 10, isActive: true }])
+    expect(JSON.parse(payload.get('addons'))).toMatchObject([{ name: 'Paçoca', price: 2, isActive: true }])
+    expect(JSON.parse(payload.get('flavors'))).toMatchObject([{ name: 'Tradicional' }])
+  })
   test('edição envia cada foto vinculada ao ID da própria opção e permite remoção', async () => {
     localStorage.clear()
     vi.clearAllMocks()
