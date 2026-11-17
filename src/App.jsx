@@ -601,6 +601,10 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (session?.token) localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  }, [session])
+
+  useEffect(() => {
     if (!session?.token) return undefined
 
     let active = true
@@ -609,10 +613,8 @@ function App() {
       .then((response) => {
         if (!active) return
         setSession((current) => {
-          if (!current) return current
-          const nextSession = { ...current, user: response.data.data.user }
-          localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession))
-          return nextSession
+          if (!current || current.token !== session.token) return current
+          return { ...current, user: response.data.data.user }
         })
       })
       .catch(() => {

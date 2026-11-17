@@ -19,6 +19,9 @@ vi.mock('./api', () => ({
 
 describe('Tela de acesso', () => {
   beforeEach(() => {
+    localStorage.getItem.mockReset()
+    localStorage.setItem.mockReset()
+    localStorage.removeItem.mockReset()
     localStorage.clear()
     vi.clearAllMocks()
   })
@@ -131,6 +134,63 @@ describe('Tela de acesso', () => {
       password: 'senha-de-teste',
     }))
     expect(await screen.findByRole('heading', { name: 'Destaques' })).toBeInTheDocument()
+  })
+
+  test('troca entre vendedor e equipe interna sem manter a sessao ou o painel anterior', async () => {
+    const storage = new Map()
+    localStorage.getItem.mockImplementation((key) => storage.get(key) ?? null)
+    localStorage.setItem.mockImplementation((key, value) => storage.set(key, value))
+    localStorage.removeItem.mockImplementation((key) => storage.delete(key))
+
+    const membership = [{ environmentId: 1, role: 'seller', status: 'approved', environment: { id: 1, name: 'Escola', status: 'active' } }]
+    const seller = { id: 2, name: 'Vendedor Teste', email: 'vendedor@timeout.local', role: 'seller', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: membership }
+    const platformAdmin = { id: 20, name: 'Joao Vitor', email: 'joaovitormadona50@gmail.com', role: 'platform_admin', environmentId: 1, emailVerifiedAt: new Date().toISOString(), memberships: membership }
+    let activeUser = null
+
+    api.post.mockImplementation(async (url, payload) => {
+      if (url !== '/auth/login') throw new Error(`Requisicao inesperada: ${url}`)
+      activeUser = payload.email === platformAdmin.email ? platformAdmin : seller
+      return { data: { data: { token: `token-${activeUser.id}`, user: activeUser } } }
+    })
+    api.get.mockImplementation(async (url) => {
+      const payloads = {
+        '/products': { products: [] }, '/categories': { categories: [] },
+        '/orders/my-orders': { orders: [] }, '/orders/seller-orders': { orders: [] },
+        '/coupons': { coupons: [] }, '/payments/settings': { settings: {} },
+        '/payments/payout-account': { account: { status: 'not_connected' }, summary: {}, transactions: [] },
+        '/payments/platform/overview': { accounts: [], summary: {} },
+        '/plans': { plans: [] }, '/access/me/applications': { sellerApplications: [], environmentApplications: [] },
+        '/access/notifications': { notifications: [] },
+        '/access/platform': { applications: [], sellers: [], environments: [], administrators: [], auditLogs: [] },
+        '/access/admin/accounts': { users: [], total: 0, page: 1, totalPages: 0 },
+      }
+      return { data: { data: url === '/auth/me' ? { user: activeUser } : (payloads[url] || {}) } }
+    })
+
+    render(createElement(App))
+
+    async function loginAs(email) {
+      fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: email } })
+      fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'senha-local' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar no Time Out' }))
+    }
+
+    await loginAs(seller.email)
+    expect(await screen.findByRole('heading', { name: 'Pedidos recebidos', level: 1 })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sair' }))
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Time Out!' })).toBeInTheDocument()
+    await waitFor(() => expect(storage.has('@timeout:web:session')).toBe(false))
+    expect(storage.has('auth_token')).toBe(false)
+
+    await loginAs(platformAdmin.email)
+    expect(await screen.findByRole('heading', { name: 'Equipe Time Out' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Pedidos recebidos', level: 1 })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sair' }))
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Time Out!' })).toBeInTheDocument()
+
+    await loginAs(seller.email)
+    expect(await screen.findByRole('heading', { name: 'Pedidos recebidos', level: 1 })).toBeInTheDocument()
+    expect(storage.get('@timeout:web:session')).toContain('token-2')
   })
 
   test('solicita código para recuperar a senha', async () => {
