@@ -746,6 +746,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
   const [formErrors, setFormErrors] = useState({})
   const [recoveryCode, setRecoveryCode] = useState('')
   const [recoveryRequested, setRecoveryRequested] = useState(false)
+  const [localRecoveryCode, setLocalRecoveryCode] = useState('')
 
   const validateForm = () => {
     const errors = {}
@@ -818,8 +819,9 @@ function LoginScreen({ onSession, onNotice, notice }) {
         if (!recoveryRequested) {
           const response = await api.post('/auth/password/forgot', { email: form.email })
           setRecoveryRequested(true)
+          setLocalRecoveryCode(response.data.data.developmentCode || '')
           onNotice(response.data.data.developmentCode
-            ? `Modo de teste: use o código ${response.data.data.developmentCode}.`
+            ? 'Modo local: nenhum e-mail foi enviado. Use o código de teste mostrado abaixo.'
             : 'Se o e-mail estiver cadastrado, o código será enviado em instantes.')
           return
         }
@@ -832,6 +834,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
         setMode('login')
         setRecoveryRequested(false)
         setRecoveryCode('')
+        setLocalRecoveryCode('')
         setForm((current) => ({ ...current, password: '' }))
         setPasswordStrength({ score: 0, feedback: [] })
         onNotice('Senha alterada com sucesso. Entre com a nova senha.')
@@ -940,6 +943,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
                 setMode('login')
                 setRecoveryRequested(false)
                 setRecoveryCode('')
+                setLocalRecoveryCode('')
                 setFormErrors({})
               }}
             >
@@ -1000,6 +1004,7 @@ function LoginScreen({ onSession, onNotice, notice }) {
                 />
               </div>
               {formErrors.recoveryCode && <span className="error-text">{formErrors.recoveryCode}</span>}
+              {localRecoveryCode && <p className="muted-note" role="status">Modo local, sem envio de e-mail. Código de teste: <strong>{localRecoveryCode}</strong></p>}
             </div>
           ) : null}
 

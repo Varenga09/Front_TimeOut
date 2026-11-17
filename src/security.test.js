@@ -211,6 +211,19 @@ describe('Tela de acesso', () => {
     expect(screen.getByLabelText('Código de recuperação')).toBeInTheDocument()
   })
 
+  test('mantém o código de teste visível durante a recuperação local', async () => {
+    api.post.mockResolvedValue({ data: { data: { accepted: true, developmentCode: '123456' } } })
+    render(createElement(App))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar acesso' }))
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@timeout.test' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Código de teste: 123456')
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'NovaSenha#123' } })
+    expect(screen.getByRole('status')).toHaveTextContent('Código de teste: 123456')
+  })
+
   test('redefine a senha com o código recebido e volta ao login', async () => {
     api.post.mockResolvedValue({ data: { data: { accepted: true } } })
     render(createElement(App))
