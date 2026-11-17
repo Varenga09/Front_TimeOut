@@ -1177,7 +1177,7 @@ function VerifyEmailScreen({ session, onSession, onVerified, onLogout, onNotice,
       const selectedLabel = verificationChannelLabels[channel]
       onNotice(
         reason === 'LOCAL_DELIVERY'
-          ? `Modo local ativado: nenhuma mensagem real foi enviada por ${selectedLabel}. Use o código 123456.`
+          ? `Modo local ativado: nenhuma mensagem real foi enviada por ${selectedLabel}. Use o código ${response.data.data.developmentCode}.`
           : response.data.data.verificationSent || response.data.data.emailSent
           ? `Novo código enviado por ${selectedLabel}`
           : reason === 'BREVO_AUTH_FAILED'
